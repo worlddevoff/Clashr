@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background-color: #06060b;
+  color: #f4f4fb;
+  font-family: 'Sora', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0b15;
+}
+::-webkit-scrollbar-thumb {
+  background: #21213a;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #33335a;
+}
+.font-display {
+  font-family: 'Chakra Petch', system-ui, sans-serif;
+}
+
+@layer utilities {
+  .text-glow-cyan {
+    text-shadow: 0 0 18px rgba(34, 229, 255, 0.55), 0 0 42px rgba(34, 229, 255, 0.25);
+  }
+  .text-glow-magenta {
+    text-shadow: 0 0 18px rgba(255, 46, 168, 0.55), 0 0 42px rgba(255, 46, 168, 0.25);
+  }
+  .text-glow-lime {
+    text-shadow: 0 0 18px rgba(178, 255, 89, 0.55), 0 0 42px rgba(178, 255, 89, 0.25);
+  }
+  .shadow-glow-cyan {
+    box-shadow: 0 0 0 1px rgba(34, 229, 255, 0.4), 0 0 28px rgba(34, 229, 255, 0.28);
+  }
+  .shadow-glow-magenta {
+    box-shadow: 0 0 0 1px rgba(255, 46, 168, 0.4), 0 0 28px rgba(255, 46, 168, 0.28);
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(120, 120, 200, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120, 120, 200, 0.05) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+}
+
+@keyframes arcade-shake {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(-6px, 4px);
+  }
+  40% {
+    transform: translate(6px, -4px);
+  }
+  60% {
+    transform: translate(-4px, -6px);
+  }
+  80% {
+    transform: translate(4px, 6px);
+  }
+}
+.animate-shake {
+  animation: arcade-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+@keyframes float-up {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-70px);
+    opacity: 0;
+  }
+}
+.animate-float-up {
+  animation: float-up 1s ease-out forwards;
+}

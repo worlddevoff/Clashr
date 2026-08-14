@@ -1,0 +1,13 @@
+[package]
+name = "arcade-escrow"
+version = "0.1.0"
+edition = "2021"
+description = "Per-match SOL escrow for The Arcade Bomb Party pots"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "arcade_escrow"
+
+[dependencies]
+solana-program = "1.18.26"

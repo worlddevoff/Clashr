@@ -1,5 +1,4 @@
-// Wallet-gated authentication. Identity = Solana address after signMessage.
-// Sessions persist to localStorage; profiles and balances are keyed by address.
+// Wallet-gated authentication. Identity = Solana address after a server nonce sign-in.
 import {
   createContext,
   useCallback,
@@ -11,19 +10,17 @@ import {
 } from 'react';
 import type { User } from '../types/domain';
 import { AVATARS, NEON_COLORS, randomFrom } from '../data/avatars';
+import { apiJson } from '../lib/api';
+import { getSessionToken, setSessionToken } from '../lib/session';
 import {
   connectSolana,
   disconnectSolana,
-  getConnectedAddress,
   getSolanaProvider,
   normalizeAddress,
   shortAddress,
-  signArcadeLogin,
+  signArcadeMessage,
   type SolanaPublicKey,
 } from '../lib/wallet';
-
-const STORAGE_KEY = 'arcade.user.v3';
-const PROFILES_KEY = 'arcade.profiles.v3';
 
 export type ConnectWalletResult =
   | { ok: true; isNew: boolean }
@@ -38,129 +35,48 @@ interface AuthValue {
   needsProfileSetup: boolean;
   logOut: () => void;
   updateUser: (patch: Partial<User>) => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
-
-type ProfileStore = Record<string, User>;
-
-function readProfiles(): ProfileStore {
-  try {
-    const raw = localStorage.getItem(PROFILES_KEY);
-    if (raw) return JSON.parse(raw) as ProfileStore;
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
-
-function writeProfiles(store: ProfileStore) {
-  try {
-    localStorage.setItem(PROFILES_KEY, JSON.stringify(store));
-  } catch {
-    /* ignore */
-  }
-}
 
 function defaultUsername(address: string): string {
   return shortAddress(address).replace('…', '');
 }
 
-function newUser(address: string, username: string, avatar: string, color: string): User {
-  const id = normalizeAddress(address);
-  return {
-    id,
-    username,
-    avatar,
-    color,
-    level: 1,
-    xp: 0,
-    xpToNext: 500,
-    gamesPlayed: 0,
-    wins: 0,
-    biggestWin: 0,
-    streak: 0,
-    walletAddress: id,
-    walletConnected: true,
-  };
-}
-
-function applyAccount(address: string | null, persistSession: (u: User | null) => void) {
-  if (!address) {
-    persistSession(null);
-    return;
-  }
-  const addr = normalizeAddress(address);
-  const profiles = readProfiles();
-  const existing = profiles[addr];
-  if (existing) {
-    persistSession({ ...existing, walletConnected: true });
-  } else {
-    persistSession(null);
-  }
+function asUser(raw: User | null | undefined): User | null {
+  if (!raw?.id) return null;
+  return { ...raw, walletAddress: raw.walletAddress || raw.id, walletConnected: true };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
-  const [pendingAddress, setPendingAddress] = useState<string | null>(null);
 
   const persistSession = useCallback((u: User | null) => {
     setUser(u);
-    try {
-      if (u) localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* ignore */
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    const token = getSessionToken();
+    if (!token) {
+      persistSession(null);
+      return;
     }
-  }, []);
+    try {
+      const data = await apiJson<{ user: User | null }>('/api/me');
+      persistSession(asUser(data.user));
+    } catch {
+      setSessionToken(null);
+      persistSession(null);
+    }
+  }, [persistSession]);
 
-  const saveProfile = useCallback((u: User) => {
-    const store = readProfiles();
-    store[normalizeAddress(u.walletAddress)] = u;
-    writeProfiles(store);
-  }, []);
-
-  // Restore session if stored wallet still matches the injected Solana wallet
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return;
-        const stored = JSON.parse(raw) as User;
-        if (!stored?.walletAddress) {
-          localStorage.removeItem(STORAGE_KEY);
-          return;
-        }
+    void refreshUser();
+  }, [refreshUser]);
 
-        const provider = getSolanaProvider();
-        if (provider) {
-          try {
-            await provider.connect({ onlyIfTrusted: true });
-          } catch {
-            /* not yet approved / locked */
-          }
-        }
-
-        const live = await getConnectedAddress();
-        if (cancelled) return;
-        if (live && normalizeAddress(live) === normalizeAddress(stored.walletAddress)) {
-          setUser({ ...stored, walletConnected: true });
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // React to account switches / disconnects
   useEffect(() => {
     const provider = getSolanaProvider();
     if (!provider?.on) return;
@@ -168,20 +84,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const onAccountChanged = (publicKey: unknown) => {
       const key = publicKey as SolanaPublicKey | null;
       if (!key) {
+        setSessionToken(null);
         persistSession(null);
         setNeedsProfileSetup(false);
-        setPendingAddress(null);
         return;
       }
-      applyAccount(key.toString(), persistSession);
-      setNeedsProfileSetup(false);
-      setPendingAddress(null);
+      const next = normalizeAddress(key.toString());
+      setUser((prev) => {
+        if (prev && normalizeAddress(prev.id) !== next) {
+          setSessionToken(null);
+          setNeedsProfileSetup(false);
+          return null;
+        }
+        return prev;
+      });
     };
 
     const onDisconnect = () => {
+      setSessionToken(null);
       persistSession(null);
       setNeedsProfileSetup(false);
-      setPendingAddress(null);
     };
 
     provider.on('accountChanged', onAccountChanged);
@@ -198,78 +120,85 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setConnecting(true);
     try {
       const address = await connectSolana();
-      await signArcadeLogin(address);
       const id = normalizeAddress(address);
-      const profiles = readProfiles();
-      const existing = profiles[id];
-
-      if (existing) {
-        persistSession({ ...existing, walletConnected: true });
-        setNeedsProfileSetup(false);
-        setPendingAddress(null);
-        return { ok: true, isNew: false };
-      }
-
-      setPendingAddress(id);
-      setNeedsProfileSetup(true);
-      const draft = newUser(id, defaultUsername(id), randomFrom(AVATARS), randomFrom(NEON_COLORS));
-      persistSession(draft);
-      saveProfile(draft);
-      return { ok: true, isNew: true };
+      const ch = await apiJson<{ nonce: string; message: string }>('/api/auth/challenge', {
+        method: 'POST',
+        body: JSON.stringify({ address: id }),
+      });
+      const signatureHex = await signArcadeMessage(ch.message);
+      const out = await apiJson<{
+        token: string;
+        isNew: boolean;
+        user: User | null;
+      }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          address: id,
+          nonce: ch.nonce,
+          signatureHex,
+          username: defaultUsername(id),
+          avatar: randomFrom(AVATARS),
+          color: randomFrom(NEON_COLORS),
+        }),
+      });
+      setSessionToken(out.token);
+      persistSession(asUser(out.user) ?? {
+        id,
+        username: defaultUsername(id),
+        avatar: randomFrom(AVATARS),
+        color: randomFrom(NEON_COLORS),
+        level: 1,
+        xp: 0,
+        xpToNext: 100,
+        gamesPlayed: 0,
+        wins: 0,
+        biggestWin: 0,
+        streak: 0,
+        walletAddress: id,
+        walletConnected: true,
+      });
+      setNeedsProfileSetup(out.isNew);
+      return { ok: true, isNew: out.isNew };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Wallet connection failed.';
       return { ok: false, message };
     } finally {
       setConnecting(false);
     }
-  }, [persistSession, saveProfile]);
+  }, [persistSession]);
 
   const completeProfile = useCallback(
     (username: string, avatar: string, color: string) => {
       const name = username.trim().slice(0, 16);
-      if (!user && !pendingAddress) return;
-      const address = user?.walletAddress ?? pendingAddress!;
-      const base =
-        user ??
-        newUser(address, defaultUsername(address), randomFrom(AVATARS), randomFrom(NEON_COLORS));
-      const next: User = {
-        ...base,
-        username: name || defaultUsername(address),
-        avatar,
-        color,
-        walletConnected: true,
-      };
-      saveProfile(next);
-      persistSession(next);
+      setUser((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, username: name || prev.username, avatar, color };
+        void apiJson('/api/me', {
+          method: 'PATCH',
+          body: JSON.stringify({ username: next.username, avatar, color }),
+        })
+          .then((data) => {
+            const body = data as { user?: User };
+            if (body.user) persistSession(asUser(body.user));
+          })
+          .catch(() => undefined);
+        return next;
+      });
       setNeedsProfileSetup(false);
-      setPendingAddress(null);
     },
-    [user, pendingAddress, persistSession, saveProfile],
+    [persistSession],
   );
 
   const logOut = useCallback(() => {
     void disconnectSolana();
+    setSessionToken(null);
     persistSession(null);
     setNeedsProfileSetup(false);
-    setPendingAddress(null);
   }, [persistSession]);
 
-  const updateUser = useCallback(
-    (patch: Partial<User>) => {
-      setUser((prev) => {
-        if (!prev) return prev;
-        const next = { ...prev, ...patch };
-        saveProfile(next);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        return next;
-      });
-    },
-    [saveProfile],
-  );
+  const updateUser = useCallback((patch: Partial<User>) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
 
   const value = useMemo<AuthValue>(
     () => ({
@@ -281,8 +210,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       needsProfileSetup,
       logOut,
       updateUser,
+      refreshUser,
     }),
-    [user, connecting, connectWallet, completeProfile, needsProfileSetup, logOut, updateUser],
+    [user, connecting, connectWallet, completeProfile, needsProfileSetup, logOut, updateUser, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

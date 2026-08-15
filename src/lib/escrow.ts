@@ -268,37 +268,8 @@ export async function lockEscrow(partyId: string): Promise<string> {
 }
 
 export async function settleEscrow(
-  partyId: string,
-  opts: { winnerAddress: string | null; house: boolean },
+  _partyId: string,
+  _opts: { winnerAddress: string | null; house: boolean },
 ): Promise<string> {
-  try {
-    const host = payer();
-    const [pda] = matchPda(partyId);
-    const treasury = new PublicKey(getTreasuryAddress());
-    const house = opts.house || !opts.winnerAddress;
-    let winner: PublicKey;
-    try {
-      winner = house ? host : new PublicKey(opts.winnerAddress as string);
-    } catch {
-      winner = host;
-    }
-    const data = Buffer.alloc(1 + 32 + 1);
-    data[0] = 4;
-    winner.toBuffer().copy(data, 1);
-    if (house) {
-      host.toBuffer().copy(data, 1);
-    }
-    data[33] = house ? 1 : 0;
-    const tx = new Transaction({ feePayer: host, recentBlockhash: await latestBlockhash() }).add(
-      ix(data, [
-        { pubkey: host, isSigner: true, isWritable: true },
-        { pubkey: pda, isSigner: false, isWritable: true },
-        { pubkey: treasury, isSigner: false, isWritable: true },
-        { pubkey: winner, isSigner: false, isWritable: true },
-      ]),
-    );
-    return await sendSignedTransaction(tx);
-  } catch (e) {
-    throw new Error(friendlyRpcError(e));
-  }
+  throw new Error('Pots are settled by the match server after the official result.');
 }

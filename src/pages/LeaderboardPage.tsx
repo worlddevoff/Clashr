@@ -1,21 +1,16 @@
 import type { ComponentType } from 'react';
-import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { TrophyIcon, FlameIcon, Gamepad2Icon } from 'lucide-react';
 import { useLeaderboard } from '../contexts/LeaderboardContext';
 import { formatSol, winRate } from '../utils/format';
 import type { LeaderboardEntryView } from '../lib/leaderboard';
 import { cn } from '../utils/cn';
-import { CREDITS_DISCLAIMER, fetchTowerLeaderboard } from '../lib/towerApi';
+import { CREDITS_DISCLAIMER } from '../lib/towerApi';
 
 export function LeaderboardPage() {
   const { entries, highlights } = useLeaderboard();
   const top = entries;
   const podium = [top[1], top[0], top[2]].filter(Boolean) as LeaderboardEntryView[];
-  const [tower, setTower] = useState<Awaited<ReturnType<typeof fetchTowerLeaderboard>>>([]);
-  useEffect(() => {
-    void fetchTowerLeaderboard().then(setTower);
-  }, []);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -25,32 +20,15 @@ export function LeaderboardPage() {
           Leaderboard
         </h1>
         <p className="mt-1 text-sm text-white/50">Ranked by wins from connected wallets.</p>
+        <p className="mt-2 text-[10px] uppercase tracking-widest text-white/35">{CREDITS_DISCLAIMER}</p>
       </div>
-
-      {tower.length > 0 && (
-        <div className="mb-10 rounded-2xl border border-neon-cyan/30 bg-ink-850 p-5">
-          <div className="font-display text-[11px] uppercase tracking-[0.2em] text-neon-cyan">CLASHR: TOWER</div>
-          <p className="mb-3 text-[10px] uppercase tracking-widest text-white/35">{CREDITS_DISCLAIMER}</p>
-          <div className="space-y-1">
-            {tower.slice(0, 10).map((r, i) => (
-              <div key={r.userId} className="flex items-center gap-3 rounded-xl px-2 py-2">
-                <span className="w-6 font-display text-white/40">{i + 1}</span>
-                <span>{r.avatar}</span>
-                <span className="flex-1 font-display text-sm">{r.username}</span>
-                <span className="text-xs text-white/40">{r.wins} wins</span>
-                <span className="text-neon-lime">{r.biggestWin}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {top.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-ink-600 bg-ink-850 px-6 py-16 text-center">
           <div className="text-4xl">🏆</div>
           <h2 className="mt-3 font-display text-xl font-bold uppercase text-white">No results yet</h2>
           <p className="mt-2 text-sm text-white/50">
-            Play Bomb Party with your wallet — only real players show up here.
+            Play with your wallet — only real players show up here.
           </p>
         </div>
       ) : (

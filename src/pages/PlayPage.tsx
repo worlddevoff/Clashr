@@ -13,6 +13,7 @@ import {
 import { Button } from '../components/ui/Button';
 import { StakePicker } from '../components/game/StakePicker';
 import { LOBBY_ROOMS } from '../data/demo';
+import { solPotsEnabled } from '../lib/solPots';
 import { useAuth } from '../contexts/AuthContext';
 import { createParty, parsePartyCode, subscribePublicParties } from '../lib/party';
 import {
@@ -57,14 +58,16 @@ export function PlayPage() {
     navigate(`/game/${room.id}?cap=${room.capacity}&entry=${room.entry}`);
   };
 
+  const potsOn = solPotsEnabled();
+
   const createBombParty = (visibility: PartyVisibility, capacity = createCap) => {
     if (!user) {
-      setError('Connect a wallet to create a SOL party.');
+      setError('Connect a wallet to create a party.');
       return;
     }
     setError(null);
-    const entryLamports = clampStakeLamports(solToLamports(stakeSol));
-    saveLastStakeSol(stakeSol);
+    const entryLamports = potsOn ? clampStakeLamports(solToLamports(stakeSol)) : undefined;
+    if (potsOn) saveLastStakeSol(stakeSol);
     const party = createParty({
       gameSlug: 'bomb-party',
       capacity,
@@ -77,14 +80,15 @@ export function PlayPage() {
         color: user.color,
       },
     });
+    const stakeQ = entryLamports ? `&stake=${entryLamports}` : '';
     navigate(
-      `/party/${party.id}?game=bomb-party&cap=${party.capacity}&host=${encodeURIComponent(party.hostId)}&vis=${visibility}&stake=${entryLamports}`,
+      `/party/${party.id}?game=bomb-party&cap=${party.capacity}&host=${encodeURIComponent(party.hostId)}&vis=${visibility}${stakeQ}`,
     );
   };
 
   const joinPublic = (listing: PublicPartyListing) => {
     if (!user) {
-      setError('Connect a wallet to join a SOL party.');
+      setError('Connect a wallet to join a party.');
       return;
     }
     setError(null);
@@ -120,7 +124,7 @@ export function PlayPage() {
             Bomb Party Lobby
           </h1>
           <p className="mt-1 text-sm text-white/55">
-            Practice vs bots for free, or stake SOL in a public or private party — same escrow as Tower.{' '}
+            Practice vs bots for free, or create a public or private party.
             <button type="button" className="text-neon-cyan underline" onClick={() => navigate('/play')}>
               All games
             </button>
@@ -139,25 +143,28 @@ export function PlayPage() {
           SOL parties
         </div>
         <h2 className="mt-1 font-display text-2xl font-bold uppercase text-white">
-          Create or join a staked lobby
+          Create or join a lobby
         </h2>
         <p className="mt-2 text-sm text-white/50">
-          Public and private Bomb Party parties use the same on-chain escrow as Tower. Every connected
-          wallet stakes before the host can start; bots never stake.
+          {potsOn
+            ? 'Public and private Bomb Party parties use the same on-chain escrow as Tower. Every connected wallet stakes before the host can start; bots never stake.'
+            : 'Public and private Bomb Party parties are free until real-money pots are enabled. Every connected wallet can join; bots fill empty seats.'}
         </p>
 
         <div className="mt-5 rounded-2xl border border-neon-amber/25 bg-ink-850 p-5">
-          <StakePicker
-            valueSol={stakeSol}
-            onChange={(value) => {
-              setStakeSol(value);
-              saveLastStakeSol(value);
-            }}
-            disabled={!user}
-            hint="Stake paid by each real player when a second wallet joins."
-          />
+          {potsOn && (
+            <StakePicker
+              valueSol={stakeSol}
+              onChange={(value) => {
+                setStakeSol(value);
+                saveLastStakeSol(value);
+              }}
+              disabled={!user}
+              hint="Stake paid by each real player when a second wallet joins."
+            />
+          )}
 
-          <div className="mt-5">
+          <div className={potsOn ? 'mt-5' : undefined}>
             <div className="mb-2 font-display text-[11px] uppercase tracking-widest text-white/45">
               Players
             </div>
@@ -190,10 +197,12 @@ export function PlayPage() {
               <LockIcon className="h-5 w-5" /> Create private lobby
             </Button>
           </div>
-          <p className="mt-3 text-xs text-white/40">
-            At {createCap} real players: {formatSol(fullPot.prizePool)} winner pot after the 5% platform
-            fee.
-          </p>
+          {potsOn && (
+            <p className="mt-3 text-xs text-white/40">
+              At {createCap} real players: {formatSol(fullPot.prizePool)} winner pot after the 5% platform
+              fee.
+            </p>
+          )}
         </div>
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row">
@@ -267,7 +276,9 @@ export function PlayPage() {
                   </span>
                 </div>
                 <div className="mt-3 text-xs text-neon-lime">
-                  {formatSol(stake / 1e9)} each · current pot {formatSol(pot.prizePool)}
+                  {potsOn
+                    ? `${formatSol(stake / 1e9)} each · current pot ${formatSol(pot.prizePool)}`
+                    : `${seats} seat${seats === 1 ? '' : 's'} open`}
                 </div>
                 <Button
                   className="mt-4 w-full"
@@ -287,7 +298,7 @@ export function PlayPage() {
           Solo vs bots
         </div>
         <p className="mt-0.5 text-xs text-white/35">
-          Practice vs bots is free. Real SOL pots need 2+ wallets.
+          Practice vs bots is free. Parties are wallet-gated.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

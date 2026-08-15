@@ -6,7 +6,7 @@ import {
   validateReachable,
 } from './generator';
 import { computeShove } from './shove';
-import { cameraForward, cameraRight, moveFromCamera, outsideCore } from './camera';
+import { cameraForward, cameraOffset, cameraRight, lineHitsCore, moveFromCamera, outsideCore, outwardLookYaw } from './camera';
 import { simulatePrizePool } from './prize';
 import { TowerEngine } from './engine';
 import { detectMoments } from './moments';
@@ -159,6 +159,26 @@ describe('camera-relative movement', () => {
     const already = outsideCore(4, 0, 2.15);
     expect(already.x).toBe(4);
     expect(already.z).toBe(0);
+  });
+
+  it('aims outward so a +Z spawn does not look through the tower', () => {
+    const yaw = outwardLookYaw(0, 3.6);
+    const off = cameraOffset(yaw, 0, 8);
+    expect(off.z).toBeGreaterThan(6);
+    expect(Math.abs(off.x)).toBeLessThan(0.01);
+    expect(Math.cos(yaw)).toBeCloseTo(-1, 6);
+  });
+
+  it('places the lens behind the look direction', () => {
+    const off = cameraOffset(0, 0, 8);
+    expect(off.x).toBeCloseTo(0, 6);
+    expect(off.y).toBeCloseTo(0, 6);
+    expect(off.z).toBeCloseTo(-8, 6);
+  });
+
+  it('detects a sightline that crosses the core', () => {
+    expect(lineHitsCore(0, 3, 0, -6, 1.2)).toBe(true);
+    expect(lineHitsCore(4, 0, 8, 0, 1.2)).toBe(false);
   });
 });
 

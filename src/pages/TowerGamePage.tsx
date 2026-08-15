@@ -7,21 +7,22 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLocalTower, useNetworkTower } from '../game/useTower';
 import { TOWER_BOT_AVATARS, TOWER_BOT_COLORS, TOWER_BOT_NAMES } from '../../shared/tower/bots';
 import type { TowerFighter } from '../../shared/tower/engine';
-import { moveFromCamera } from '../../shared/tower/camera';
+import { moveFromCamera, outwardLookYaw } from '../../shared/tower/camera';
 import type { TowerInput, TowerPlayerSnap } from '../../shared/tower/types';
 import { playSfx, unlockAudio } from '../lib/audio';
 import { CREDITS_DISCLAIMER } from '../../shared/games';
-import { loadPartyRoster, openPartyChannel } from '../lib/party';
-import { computeEscrowPool, settleEscrow } from '../lib/escrow';
-import type { PartyGameRoster, PartyWireMessage } from '../types/party';
+import { loadPartyRoster } from '../lib/party';
+import { computeEscrowPool } from '../lib/escrow';
+import { solPotsEnabled } from '../lib/solPots';
+import type { PartyGameRoster } from '../types/party';
 
-const LOOK_SENSITIVITY = 0.0036;
+const LOOK_SENSITIVITY = 0.0028;
 const KEY_TURN_SPEED = 3.4;
-const MIN_PITCH = -0.55;
-const MAX_PITCH = 1.15;
-const CAM_DIST_MIN = 6;
-const CAM_DIST_MAX = 16;
-const CAM_DIST_DEFAULT = 9.2;
+const MIN_PITCH = -0.08;
+const MAX_PITCH = 1.05;
+const CAM_DIST_MIN = 5.5;
+const CAM_DIST_MAX = 14;
+const CAM_DIST_DEFAULT = 8.2;
 
 function makeBots(human: TowerFighter): TowerFighter[] {
   return fillWithBots([human]);
@@ -117,48 +118,22 @@ function TowerMatch({
   );
   const partyId = partyRoster?.partyId ?? null;
   const isPartyHost = !!partyRoster && partyRoster.hostId === userId;
-  const partyFighters = useMemo(
-    () =>
-      partyRoster
-        ? fillWithBots(
-            partyRoster.members.map((member) => ({
-              id: member.id,
-              username: member.username,
-              avatar: member.avatar,
-              color: member.color,
-              isBot: false,
-            })),
-          )
-        : [],
-    [partyRoster],
-  );
-  const local = useLocalTower(practice ? fighters : isPartyHost ? partyFighters : [], userId);
-  const net = useNetworkTower(!practice && !partyRoster);
-  const [partySnap, setPartySnap] = useState<typeof local.snap>(null);
-  const [partyResult, setPartyResult] = useState<typeof local.result>(null);
-  const partyChannel = useRef<ReturnType<typeof openPartyChannel> | null>(null);
-  const lastPartyPost = useRef(0);
-  const partySettled = useRef(false);
-  const snap = partyRoster ? (isPartyHost ? local.snap : partySnap) : practice ? local.snap : net.snap;
-  const result = partyRoster
-    ? isPartyHost
-      ? local.result
-      : partyResult
-    : practice
-      ? local.result
-      : net.result;
+  const local = useLocalTower(practice ? fighters : [], userId);
+  const net = useNetworkTower({
+    enabled: !practice,
+    partyId,
+    isHost: isPartyHost,
+    expectedPlayers: partyRoster?.members.length ?? 0,
+  });
+  const snap = practice ? local.snap : net.snap;
+  const result = practice ? local.result : net.result;
 
   const setInput = useCallback(
     (input: TowerInput) => {
-      if (!partyRoster) {
-        if (practice) local.setInput(input);
-        else net.setInput(input);
-        return;
-      }
-      if (isPartyHost) local.setInput(input);
-      else partyChannel.current?.post({ type: 'tower:input', playerId: userId, input });
+      if (practice) local.setInput(input);
+      else net.setInput(input);
     },
-    [partyRoster, practice, isPartyHost, local.setInput, net.setInput, userId],
+    [practice, local.setInput, net.setInput],
   );
 
   const you = snap?.players.find((p) => p.id === userId) ?? null;
@@ -173,14 +148,19 @@ function TowerMatch({
   // facing: the old camera spun to match every turn, which made the controls
   // feel like they changed direction under you.
   const camYaw = useRef(0);
-  const camPitch = useRef(0.42);
+  const camPitch = useRef(0.52);
   const camDist = useRef(CAM_DIST_DEFAULT);
+  const aimed = useRef(false);
   const keys = useRef({ ax: 0, az: 0, jump: false, jumpHeld: false, shove: false, dodge: false });
   const turn = useRef(0);
   const pressed = useRef(new Set<string>());
   const seq = useRef(1);
   const lastEvent = useRef(0);
   const facing = useRef(0);
+  if (you && !aimed.current) {
+    camYaw.current = outwardLookYaw(you.x, you.z);
+    aimed.current = true;
+  }
 
   const alivePlayers = useMemo(
     () => (snap ? snap.players.filter((p) => p.alive) : []),
@@ -210,61 +190,13 @@ function TowerMatch({
   const leaveMatch = useCallback(() => {
     if (document.pointerLockElement) document.exitPointerLock();
     if (practice) local.forfeit();
-    else if (partyRoster) {
-      if (isPartyHost) local.forfeit();
-      else partyChannel.current?.post({ type: 'tower:leave', playerId: userId });
-    } else net.leave();
+    else net.leave();
     onHome();
-  }, [practice, partyRoster, isPartyHost, local.forfeit, net.leave, onHome, userId]);
+  }, [practice, local.forfeit, net.leave, onHome]);
 
   useEffect(() => {
     unlockAudio();
   }, []);
-
-  useEffect(() => {
-    if (!partyId) return;
-    const channel = openPartyChannel(partyId, (message: PartyWireMessage) => {
-      if (message.type === 'tower:input' && isPartyHost) {
-        local.setPlayerInput(message.playerId, message.input);
-      } else if (message.type === 'tower:leave' && isPartyHost) {
-        local.forfeit(message.playerId);
-      } else if (message.type === 'tower:snapshot' && !isPartyHost) {
-        setPartySnap(message.snap);
-      } else if (message.type === 'tower:result' && !isPartyHost) {
-        setPartyResult(message.result);
-      }
-    });
-    partyChannel.current = channel;
-    channel.post({ type: 'ping' });
-    return () => {
-      channel.close();
-      partyChannel.current = null;
-    };
-  }, [partyId, isPartyHost, local.setPlayerInput, local.forfeit]);
-
-  useEffect(() => {
-    if (!partyId || !isPartyHost || !local.snap) return;
-    const now = performance.now();
-    if (now - lastPartyPost.current < 50) return;
-    lastPartyPost.current = now;
-    partyChannel.current?.post({ type: 'tower:snapshot', snap: local.snap });
-  }, [partyId, isPartyHost, local.snap]);
-
-  useEffect(() => {
-    if (!partyId || !isPartyHost || !local.result || partySettled.current) return;
-    partySettled.current = true;
-    partyChannel.current?.post({ type: 'tower:result', result: local.result });
-    if (!partyRoster?.escrowPda) return;
-    const winner = local.result.participants.find(
-      (participant) => participant.id === local.result?.winnerId,
-    );
-    void settleEscrow(partyId, {
-      winnerAddress: winner?.isBot ? null : (winner?.id ?? null),
-      house: !winner || winner.isBot,
-    }).catch((error: unknown) => {
-      console.error('Tower escrow settlement failed', error);
-    });
-  }, [partyId, isPartyHost, local.result, partyRoster]);
 
   useEffect(() => {
     if (!snap?.events.length) return;
@@ -444,7 +376,7 @@ function TowerMatch({
 
   if (result) {
     const solPrize =
-      partyRoster?.escrowPda && partyRoster.entryLamports
+      solPotsEnabled() && partyRoster?.escrowPda && partyRoster.entryLamports
         ? computeEscrowPool(partyRoster.members.length, partyRoster.entryLamports).prizePool
         : null;
     return (
@@ -494,9 +426,7 @@ function TowerMatch({
               {practice
                 ? 'Spawning…'
                 : partyRoster
-                  ? isPartyHost
-                    ? 'Starting Tower party…'
-                    : 'Syncing with party host…'
+                  ? net.error || net.status || 'Connecting party…'
                   : net.error || net.status || 'Connecting…'}
             </div>
             <button

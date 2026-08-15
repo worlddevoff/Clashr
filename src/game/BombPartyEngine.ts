@@ -535,6 +535,43 @@ export class BombPartyEngine extends GameEngine {
     return this.holdSeconds();
   }
 
+  finished(): boolean {
+    return this.status === 'finished';
+  }
+
+  winnerId(): string | null {
+    if (this.status !== 'finished') return null;
+    return this.players.find((p) => p.alive)?.id ?? null;
+  }
+
+  forfeit(playerId: string): void {
+    const p = this.players.find((pl) => pl.id === playerId);
+    if (!p || !p.alive || this.status === 'finished') return;
+    p.alive = false;
+    p.hasBomb = false;
+    p.eliminatedAt = this.elapsed;
+    this.lastEliminated = p.username;
+    if (this.bomb && this.bomb.holderId === p.id) {
+      const survivors = this.players.filter((s) => s.alive);
+      if (survivors.length > 0) {
+        const next = survivors[Math.floor(Math.random() * survivors.length)];
+        next.hasBomb = true;
+        this.bomb = {
+          ...this.bomb,
+          holderId: next.id,
+          timeLeft: this.holdSeconds(),
+          intensity: 0,
+        };
+      } else {
+        this.bomb = null;
+      }
+    }
+    if (this.players.filter((s) => s.alive).length <= 1) {
+      this.status = 'finished';
+      this.bomb = null;
+    }
+  }
+
   /** Test helper: jump the clock without simulating the intervening frames. */
   debugSetElapsed(ms: number) {
     this.elapsed = ms;

@@ -12,6 +12,7 @@ import { FEATURED_GAMES } from '../data/demo';
 import { useLeaderboard } from '../contexts/LeaderboardContext';
 import { subscribePublicParties } from '../lib/party';
 import { computeEscrowPool, ENTRY_LAMPORTS } from '../lib/escrow';
+import { solPotsEnabled } from '../lib/solPots';
 import type { PublicPartyListing } from '../types/party';
 import { formatSol } from '../utils/format';
 import { SITE_NAME, SITE_TAGLINE, SITE_TITLE } from '../lib/brand';
@@ -144,7 +145,9 @@ export function HomePage() {
           >
             {publicParties.map((p) => {
               const stake = p.entryLamports ?? ENTRY_LAMPORTS;
-              const pool = computeEscrowPool(p.memberCount, stake);
+              const pool = solPotsEnabled()
+                ? computeEscrowPool(p.memberCount, stake)
+                : { prizePool: 0 };
               return (
                 <motion.div
                   key={p.id}

@@ -1,13 +1,13 @@
 import type { ClientMsg, ServerMsg } from '../../shared/protocol';
-import { getTowerToken } from './towerApi';
+import { wsUrl } from './api';
+import { getSessionToken } from './session';
 
 export function connectTowerSocket(onMsg: (msg: ServerMsg) => void): {
   send: (msg: ClientMsg) => void;
   close: () => void;
 } {
-  const token = getTowerToken();
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${proto}://${window.location.host}/ws?token=${encodeURIComponent(token || '')}`;
+  const token = getSessionToken();
+  const url = wsUrl(token || '');
   const ws = new WebSocket(url);
   ws.onmessage = (ev) => {
     try {

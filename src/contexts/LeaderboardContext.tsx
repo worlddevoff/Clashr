@@ -2,17 +2,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
 import {
-  loadLeaderboard,
-  recordMatchResult,
   leaderboardHighlights,
+  rankLeaderboard,
+  recordMatchResult,
   type GameParticipantStat,
   type LeaderboardEntryView,
 } from '../lib/leaderboard';
+import { fetchTowerLeaderboard } from '../lib/towerApi';
 import type { Credits } from '../types/domain';
 
 interface LeaderboardValue {
@@ -28,20 +30,41 @@ interface LeaderboardValue {
 
 const LeaderboardContext = createContext<LeaderboardValue | null>(null);
 
-export function LeaderboardProvider({ children }: { children: ReactNode }) {
-  const [entries, setEntries] = useState<LeaderboardEntryView[]>(() =>
-    typeof window !== 'undefined' ? loadLeaderboard() : [],
+function mapRows(
+  rows: Awaited<ReturnType<typeof fetchTowerLeaderboard>>,
+): LeaderboardEntryView[] {
+  return rankLeaderboard(
+    rows.map((r) => ({
+      id: r.userId,
+      username: r.username,
+      avatar: r.avatar,
+      color: r.color,
+      isBot: false,
+      wins: r.wins,
+      gamesPlayed: r.gamesPlayed,
+      biggestWin: r.biggestWin,
+      streak: r.streak,
+    })),
   );
+}
+
+export function LeaderboardProvider({ children }: { children: ReactNode }) {
+  const [entries, setEntries] = useState<LeaderboardEntryView[]>([]);
 
   const refresh = useCallback(() => {
-    setEntries(loadLeaderboard());
+    void fetchTowerLeaderboard().then((rows) => setEntries(mapRows(rows)));
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const recordMatch = useCallback(
     (participants: GameParticipantStat[], winnerId: string, prize: Credits) => {
       setEntries(recordMatchResult(participants, winnerId, prize));
+      window.setTimeout(refresh, 400);
     },
-    [],
+    [refresh],
   );
 
   const highlights = useMemo(() => leaderboardHighlights(entries), [entries]);

@@ -5,6 +5,7 @@ const MAX = 20;
 
 export interface RecentMatch {
   gameNumber: number;
+  gameSlug?: string;
   won: boolean;
   prize: Credits;
   practice: boolean;

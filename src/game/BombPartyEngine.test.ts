@@ -83,3 +83,13 @@ describe('Bomb Party fuse', () => {
     expect(engine.getHoldSeconds()).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+describe('Bomb Party forfeit', () => {
+  it('eliminates a player and ends the match if one remains', () => {
+    const engine = makeEngine(2);
+    engine.forfeit('human');
+    expect(engine.snapshot().players.find((p) => p.id === 'human')?.alive).toBe(false);
+    expect(engine.finished()).toBe(true);
+    expect(engine.winnerId()).toBe('bot-1');
+  });
+});

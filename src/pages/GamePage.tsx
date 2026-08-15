@@ -6,20 +6,17 @@ import { Arena } from '../components/game/Arena';
 import { GameHud } from '../components/game/GameHud';
 import { ResultsScreen } from '../components/game/ResultsScreen';
 import { TutorialOverlay } from '../components/game/TutorialOverlay';
-import { useBombParty } from '../game/useBombParty';
+import { useBombParty, useNetworkBombParty, bombResultToGame } from '../game/useBombParty';
 import { useGameJuice } from '../game/useGameJuice';
 import { TAUNTS } from '../game/BombPartyEngine';
 import { useGameSetup, buildResult, type SessionSetup } from '../game/useGameSession';
 import { useEconomy } from '../contexts/EconomyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLeaderboard } from '../contexts/LeaderboardContext';
-import { loadPartyRoster, openPartyChannel } from '../lib/party';
-import { settleEscrow } from '../lib/escrow';
+import { loadPartyRoster } from '../lib/party';
 import { recordMatchHistory } from '../lib/matchHistory';
 import { unlockAudio } from '../lib/audio';
 import type { GameResult } from '../types/domain';
-import type { PartyWireMessage } from '../types/party';
-import type { EngineSnapshot } from '../types/game';
 
 const ARENA = { width: 900, height: 620 };
 
@@ -99,13 +96,11 @@ function GameInstance({
 }) {
   const navigate = useNavigate();
   const { providers } = useEconomy();
-  const { updateUser, user } = useAuth();
+  const { updateUser, user, refreshUser } = useAuth();
   const { recordMatch } = useLeaderboard();
   const [result, setResult] = useState<GameResult | null>(null);
   const settledRef = useRef(false);
-  const channelRef = useRef<ReturnType<typeof openPartyChannel> | null>(null);
-  const lastSnapPost = useRef(0);
-  const runLocal = !partyId || isHost;
+  const runLocal = !partyId;
 
   useEffect(() => {
     unlockAudio();
@@ -154,6 +149,7 @@ function GameInstance({
         });
       }
       setResult(res);
+      if (partyId) void refreshUser();
       if (user?.walletAddress) {
         recordMatchHistory(user.walletAddress, {
           gameNumber: res.gameNumber,
@@ -164,7 +160,7 @@ function GameInstance({
         });
       }
     },
-    [setup, updateUser, user, recordMatch],
+    [setup, updateUser, user, recordMatch, refreshUser, partyId],
   );
 
   const onFinish = useCallback(
@@ -185,47 +181,17 @@ function GameInstance({
         isBot: !p.isHuman,
       }));
       const payout = async () => {
-        if (partyId && isHost && setup.escrowPda) {
-          const winner = setup.seed.find((p) => p.id === winnerId);
-          const house = setup.practiceMode || !winner || !winner.isHuman;
-          try {
-            await settleEscrow(partyId, {
-              winnerAddress: house ? null : winner.id,
-              house,
-            });
-          } catch (e) {
-            console.error(e);
-          }
-        }
-        if (partyId && isHost) {
-          channelRef.current?.post({ type: 'game:result', result: res, participants });
-        }
         settle(res, winnerId, participants);
       };
       void payout();
     },
-    [setup, providers, partyId, isHost, settle],
-  );
-
-  const onSnapshot = useCallback(
-    (s: EngineSnapshot) => {
-      if (!partyId || !isHost) return;
-      const now = performance.now();
-      if (now - lastSnapPost.current < 50) return; // ~20 fps
-      lastSnapPost.current = now;
-      channelRef.current?.post({ type: 'game:snapshot', snap: s });
-    },
-    [partyId, isHost],
+    [setup, providers, settle],
   );
 
   const {
-    snap,
-    moveTo,
-    taunt,
-    applyRemoteKey,
-    applyRemoteMove,
-    applyRemoteTaunt,
-    setRemoteSnap,
+    snap: localSnap,
+    moveTo: localMove,
+    taunt: localTaunt,
   } = useBombParty({
     seed: setup.seed,
     arena: ARENA,
@@ -233,125 +199,22 @@ function GameInstance({
     startTimer: 8,
     runLocal,
     onFinish: runLocal ? onFinish : undefined,
-    onSnapshot: runLocal ? onSnapshot : undefined,
+  });
+  const net = useNetworkBombParty({
+    enabled: !!partyId,
+    partyId,
+    isHost,
+    expectedPlayers: setup.seed.filter((p) => p.isHuman).length,
   });
 
-  // Party channel: host broadcasts, guests send intents / receive snaps
   useEffect(() => {
-    if (!partyId || !user) return;
-    const channel = openPartyChannel(partyId, (msg: PartyWireMessage) => {
-      if (msg.type === 'game:snapshot' && !isHost) {
-        setRemoteSnap(msg.snap);
-        return;
-      }
-      if (msg.type === 'game:result' && !isHost) {
-        settle(msg.result, msg.result.winnerId, msg.participants);
-        return;
-      }
-      if (!isHost) return;
-      if (msg.type === 'game:key') {
-        applyRemoteKey(msg.playerId, msg.dir, msg.pressed);
-      } else if (msg.type === 'game:move') {
-        applyRemoteMove(msg.playerId, msg.x, msg.y);
-      } else if (msg.type === 'game:taunt') {
-        applyRemoteTaunt(msg.playerId, msg.emoji);
-      }
-    });
-    channelRef.current = channel;
-    return () => {
-      channel.close();
-      channelRef.current = null;
-    };
-  }, [
-    partyId,
-    user,
-    isHost,
-    setRemoteSnap,
-    settle,
-    applyRemoteKey,
-    applyRemoteMove,
-    applyRemoteTaunt,
-  ]);
+    if (!net.result || settledRef.current) return;
+    settle(bombResultToGame(net.result), net.result.winnerId);
+  }, [net.result, settle]);
 
-  // Guest local input → intents
-  useEffect(() => {
-    if (!partyId || isHost || !user) return;
-    const map: Record<string, 'up' | 'down' | 'left' | 'right'> = {
-      ArrowUp: 'up',
-      KeyW: 'up',
-      ArrowDown: 'down',
-      KeyS: 'down',
-      ArrowLeft: 'left',
-      KeyA: 'left',
-      ArrowRight: 'right',
-      KeyD: 'right',
-    };
-    const down = (e: KeyboardEvent) => {
-      const dir = map[e.code];
-      if (dir) {
-        e.preventDefault();
-        channelRef.current?.post({
-          type: 'game:key',
-          playerId: user.id,
-          dir,
-          pressed: true,
-        });
-        return;
-      }
-      const m = /^Digit([1-6])$/.exec(e.code);
-      if (m) {
-        const idx = Number(m[1]) - 1;
-        if (TAUNTS[idx]) {
-          channelRef.current?.post({
-            type: 'game:taunt',
-            playerId: user.id,
-            emoji: TAUNTS[idx],
-          });
-        }
-      }
-    };
-    const up = (e: KeyboardEvent) => {
-      const dir = map[e.code];
-      if (dir) {
-        channelRef.current?.post({
-          type: 'game:key',
-          playerId: user.id,
-          dir,
-          pressed: false,
-        });
-      }
-    };
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => {
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-    };
-  }, [partyId, isHost, user]);
-
-  const guestMoveTo = useCallback(
-    (x: number, y: number) => {
-      if (!user) return;
-      if (partyId && !isHost) {
-        channelRef.current?.post({ type: 'game:move', playerId: user.id, x, y });
-        return;
-      }
-      moveTo(x, y);
-    },
-    [partyId, isHost, user, moveTo],
-  );
-
-  const guestTaunt = useCallback(
-    (emoji: string) => {
-      if (!user) return;
-      if (partyId && !isHost) {
-        channelRef.current?.post({ type: 'game:taunt', playerId: user.id, emoji });
-        return;
-      }
-      taunt(emoji);
-    },
-    [partyId, isHost, user, taunt],
-  );
+  const snap = runLocal ? localSnap : net.snap;
+  const moveTo = runLocal ? localMove : net.moveTo;
+  const taunt = runLocal ? localTaunt : net.taunt;
 
   const youWon = result ? result.winnerId === setup.humanId : null;
   const juice = useGameJuice(snap, setup.humanId, youWon);
@@ -361,9 +224,9 @@ function GameInstance({
   const onArenaPointer = useCallback(
     (x: number, y: number) => {
       if (spectating || !humanAlive) return;
-      guestMoveTo(x, y);
+      moveTo(x, y);
     },
-    [spectating, humanAlive, guestMoveTo],
+    [spectating, humanAlive, moveTo],
   );
 
   if (result) {
@@ -377,11 +240,11 @@ function GameInstance({
     );
   }
 
-  if (partyId && !isHost && !snap) {
+  if (partyId && !snap) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-ink-950 text-center">
         <div className="font-display text-sm uppercase tracking-widest text-neon-cyan">
-          Syncing with host…
+          {net.error || net.status || 'Connecting to match server…'}
         </div>
         <p className="text-xs text-white/40">Keep this tab open — the shared match is starting.</p>
       </div>
@@ -489,7 +352,7 @@ function GameInstance({
 
           {partyId && (
             <div className="absolute -top-8 left-2 font-display text-[10px] uppercase tracking-widest text-neon-cyan/70">
-              {isHost ? 'Hosting shared match' : 'Joined shared match'}
+              Shared match · server-authoritative
             </div>
           )}
 
@@ -504,7 +367,7 @@ function GameInstance({
         </div>
 
         <div className="mt-4">
-          <TauntBar onTaunt={guestTaunt} disabled={!humanAlive || spectating} />
+          <TauntBar onTaunt={taunt} disabled={!humanAlive || spectating} />
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">

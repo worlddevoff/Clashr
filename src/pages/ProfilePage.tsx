@@ -1,21 +1,35 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { LogOutIcon, PlayIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
 import { shortAddress } from '../lib/wallet';
-import { loadMatchHistory } from '../lib/matchHistory';
+import { loadMatchHistory, type RecentMatch } from '../lib/matchHistory';
+import { fetchMatchHistory } from '../lib/towerApi';
 import { formatSol, winRate } from '../utils/format';
 import { cn } from '../utils/cn';
 
 export function ProfilePage() {
   const { user, logOut } = useAuth();
   const navigate = useNavigate();
+  const [recentGames, setRecentGames] = useState<RecentMatch[]>(() =>
+    user ? loadMatchHistory(user.walletAddress) : [],
+  );
+
+  useEffect(() => {
+    if (!user) return;
+    const local = loadMatchHistory(user.walletAddress);
+    if (local.length) setRecentGames(local);
+    void fetchMatchHistory().then((rows) => {
+      if (rows.length) setRecentGames(rows);
+    });
+  }, [user]);
+
   if (!user) return null;
 
   const xpPct = Math.min(100, Math.round((user.xp / user.xpToNext) * 100));
   const rate = winRate(user.wins, user.gamesPlayed);
-  const recentGames = loadMatchHistory(user.walletAddress);
   const achievements = [
     { id: 'a1', label: 'First Blast', description: 'Play your first game', icon: '💥', unlocked: user.gamesPlayed >= 1 },
     { id: 'a4', label: 'Untouchable', description: 'Win 3 games in a row', icon: '🔥', unlocked: user.streak >= 3 },
@@ -125,7 +139,7 @@ export function ProfilePage() {
           <div className="overflow-hidden rounded-2xl border border-ink-600 bg-ink-850">
             {recentGames.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-white/40">
-                No matches yet. Play Bomb Party and results show up here.
+                No matches yet. Play a game and results show up here.
               </div>
             ) : (
               recentGames.map((g) => (
@@ -133,7 +147,10 @@ export function ProfilePage() {
                   key={`${g.gameNumber}-${g.at}`}
                   className="flex items-center justify-between border-b border-ink-700/60 px-4 py-3 last:border-0"
                 >
-                  <span className="font-display text-sm text-white">Bomb Party #{g.gameNumber}</span>
+                  <span className="font-display text-sm text-white">
+                    {g.gameSlug === 'tower' ? 'Tower' : 'Bomb Party'}
+                    {g.gameNumber ? ` #${g.gameNumber}` : ''}
+                  </span>
                   <span
                     className={cn(
                       'font-display text-xs uppercase tracking-wide',

@@ -3,9 +3,12 @@ import type { WebSocket } from 'ws';
 import { TowerEngine, type TowerFighter } from '../../shared/tower/engine.ts';
 import { SNAPSHOT_EVERY, TICK_HZ, QUEUE_BACKFILL_MS } from '../../shared/tower/constants.ts';
 import { TOWER_ENTRY_CREDITS, TOWER_MATCH_SIZE } from '../../shared/games.ts';
-import type { ClientMsg, ServerMsg } from '../../shared/protocol.ts';
+import type { BombMatchResult, ClientMsg, ServerMsg } from '../../shared/protocol.ts';
 import type { TowerInput } from '../../shared/tower/types.ts';
-import { settleMatch, getBalance } from './ledger.ts';
+import { BombPartyEngine, type BombPartySeedPlayer } from '../../src/game/BombPartyEngine.ts';
+import { settleMatch, getBalance, chargeMatchEntries, settleBombMatch } from './ledger.ts';
+import { getParty } from './parties.ts';
+import { houseCanSettle, settleEscrowAsHouse } from './escrowOracle.ts';
 import { TOWER_BOT_AVATARS, TOWER_BOT_COLORS, TOWER_BOT_NAMES } from '../../shared/tower/bots.ts';
 
 type Sock = WebSocket & { userId?: string; username?: string; avatar?: string; color?: string };
@@ -15,16 +18,35 @@ interface Queued {
   since: number;
 }
 
-interface LiveMatch {
-  id: string;
-  engine: TowerEngine;
-  sockets: Map<string, Sock>;
-  timer: ReturnType<typeof setInterval>;
-}
+type LiveMatch =
+  | {
+      kind: 'tower';
+      id: string;
+      engine: TowerEngine;
+      sockets: Map<string, Sock>;
+      timer: ReturnType<typeof setInterval>;
+      partyId?: string;
+      escrowPda?: string;
+    }
+  | {
+      kind: 'bomb';
+      id: string;
+      engine: BombPartyEngine;
+      sockets: Map<string, Sock>;
+      timer: ReturnType<typeof setInterval>;
+      partyId: string;
+      escrowPda?: string;
+      entryLamports?: number;
+      players: BombPartySeedPlayer[];
+    };
+
+const BOMB_ARENA = { width: 900, height: 620 };
+const BOMB_HZ = 20;
+const FEE_BPS = 500;
 
 const queue: Queued[] = [];
 const matches = new Map<string, LiveMatch>();
-const parties = new Map<string, { host: string; members: Sock[] }>();
+const parties = new Map<string, { host: string; members: Sock[]; game?: 'tower' | 'bomb-party' }>();
 
 function send(sock: Sock, msg: ServerMsg): void {
   if (sock.readyState === sock.OPEN) sock.send(JSON.stringify(msg));
@@ -40,7 +62,27 @@ function botFighter(i: number): TowerFighter {
   };
 }
 
-async function startMatch(humans: Sock[]): Promise<void> {
+function bombBot(i: number): BombPartySeedPlayer {
+  return {
+    id: `bot-${i}-${randomUUID().slice(0, 6)}`,
+    username: `Bot ${TOWER_BOT_NAMES[i % TOWER_BOT_NAMES.length]}`,
+    avatar: TOWER_BOT_AVATARS[i % TOWER_BOT_AVATARS.length],
+    color: TOWER_BOT_COLORS[i % TOWER_BOT_COLORS.length],
+    isHuman: false,
+  };
+}
+
+function solPool(humans: number, lamports?: number) {
+  if (humans < 2 || !lamports) return { gross: 0, platformFee: 0, prize: 0 };
+  const gross = (humans * lamports) / 1e9;
+  const platformFee = (gross * FEE_BPS) / 10_000;
+  return { gross, platformFee, prize: gross - platformFee };
+}
+
+async function startMatch(
+  humans: Sock[],
+  opts?: { partyId?: string; escrowPda?: string },
+): Promise<void> {
   const fighters: TowerFighter[] = humans.map((s) => ({
     id: s.userId!,
     username: s.username || 'Player',
@@ -52,18 +94,83 @@ async function startMatch(humans: Sock[]): Promise<void> {
 
   const id = randomUUID();
   const seed = Math.floor(Math.random() * 1e9);
+  try {
+    await chargeMatchEntries(
+      id,
+      'tower',
+      fighters.map((f) => ({
+        id: f.id,
+        username: f.username,
+        avatar: f.avatar,
+        color: f.color,
+        isBot: f.isBot,
+      })),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Could not start match';
+    for (const s of humans) send(s, { type: 'error', message });
+    return;
+  }
   const engine = new TowerEngine({ seed, matchId: id, fighters });
   const sockets = new Map<string, Sock>();
   for (const s of humans) {
     if (s.userId) sockets.set(s.userId, s);
-    send(s, { type: 'match_start', matchId: id, seed, you: s.userId! });
+    send(s, { type: 'match_start', matchId: id, seed, you: s.userId!, game: 'tower' });
   }
 
-  const live: LiveMatch = { id, engine, sockets, timer: setInterval(() => tick(live), 1000 / TICK_HZ) };
+  const live: LiveMatch = {
+    kind: 'tower',
+    id,
+    engine,
+    sockets,
+    timer: setInterval(() => tickTower(live as Extract<LiveMatch, { kind: 'tower' }>), 1000 / TICK_HZ),
+    partyId: opts?.partyId,
+    escrowPda: opts?.escrowPda,
+  };
   matches.set(id, live);
 }
 
-function tick(live: LiveMatch): void {
+async function startBombMatch(
+  humans: Sock[],
+  opts: { partyId: string; capacity: number; escrowPda?: string; entryLamports?: number },
+): Promise<void> {
+  const players: BombPartySeedPlayer[] = humans.map((s) => ({
+    id: s.userId!,
+    username: s.username || 'Player',
+    avatar: s.avatar || '🐸',
+    color: s.color || '#22e5ff',
+    isHuman: true,
+  }));
+  const cap = Math.max(2, Math.min(20, opts.capacity || players.length));
+  while (players.length < cap) players.push(bombBot(players.length));
+  const id = randomUUID();
+  const engine = new BombPartyEngine(players, {
+    arena: BOMB_ARENA,
+    startTimer: 8,
+    passTimeBonus: 0,
+    humanId: players[0]?.id ?? 'host',
+    countdownMs: 3000,
+  });
+  const sockets = new Map<string, Sock>();
+  for (const s of humans) {
+    if (s.userId) sockets.set(s.userId, s);
+    send(s, { type: 'match_start', matchId: id, seed: 0, you: s.userId!, game: 'bomb-party' });
+  }
+  const live: Extract<LiveMatch, { kind: 'bomb' }> = {
+    kind: 'bomb',
+    id,
+    engine,
+    sockets,
+    timer: setInterval(() => tickBomb(live), 1000 / BOMB_HZ),
+    partyId: opts.partyId,
+    escrowPda: opts.escrowPda,
+    entryLamports: opts.entryLamports,
+    players,
+  };
+  matches.set(id, live);
+}
+
+function tickTower(live: Extract<LiveMatch, { kind: 'tower' }>): void {
   live.engine.step();
   if (live.engine.tick % SNAPSHOT_EVERY === 0) {
     const snap = live.engine.snapshot();
@@ -77,13 +184,102 @@ function tick(live: LiveMatch): void {
     clearInterval(live.timer);
     const result = live.engine.result;
     void settleMatch(result)
-      .catch((err) => console.error('settle failed', err))
-      .finally(() => {
+      .then(async () => {
+        if (live.escrowPda && live.partyId && houseCanSettle()) {
+          const winner = result.participants.find((p) => p.id === result.winnerId);
+          try {
+            await settleEscrowAsHouse({
+              partyId: live.partyId,
+              winnerAddress: winner?.isBot ? null : result.winnerId,
+              house: !winner || winner.isBot,
+            });
+          } catch (err) {
+            console.error('escrow settle failed', err);
+          }
+        }
         const msg: ServerMsg = { type: 'match_end', result };
         for (const sock of live.sockets.values()) send(sock, msg);
+      })
+      .catch((err) => {
+        console.error('settle failed', err);
+        for (const sock of live.sockets.values()) {
+          send(sock, { type: 'error', message: 'Match could not be settled. Credits were reserved.' });
+        }
+      })
+      .finally(() => {
         matches.delete(live.id);
       });
   }
+}
+
+function tickBomb(live: Extract<LiveMatch, { kind: 'bomb' }>): void {
+  live.engine.step(1000 / BOMB_HZ);
+  const snap = live.engine.snapshot();
+  const raw = JSON.stringify({ type: 'bomb_snapshot', matchId: live.id, snap } satisfies ServerMsg);
+  for (const sock of live.sockets.values()) {
+    if (sock.readyState === sock.OPEN) sock.send(raw);
+  }
+  if (!live.engine.finished()) return;
+  clearInterval(live.timer);
+  const winnerId = live.engine.winnerId();
+  const winner = live.players.find((p) => p.id === winnerId) ?? live.players.find((p) => p.isHuman) ?? live.players[0];
+  const humans = live.players.filter((p) => p.isHuman);
+  const practice = humans.length < 2 || !live.escrowPda;
+  const pool = practice ? { gross: 0, platformFee: 0, prize: 0 } : solPool(humans.length, live.entryLamports);
+  const result: BombMatchResult = {
+    matchId: live.id,
+    winnerId,
+    winner: winner?.username ?? 'Winner',
+    winnerAvatar: winner?.avatar ?? '🐸',
+    winnerColor: winner?.color ?? '#22e5ff',
+    winnerIsBot: winner ? !winner.isHuman : true,
+    prize: pool.prize,
+    prizeCurrency: 'SOL',
+    grossPool: pool.gross,
+    platformFee: pool.platformFee,
+    practiceMode: practice,
+    survivedSec: live.engine.getElapsedSec(),
+    playerCount: live.players.length,
+    players: live.players.map((p) => p.username),
+    timestamp: Date.now(),
+  };
+  void (async () => {
+    try {
+      await settleBombMatch({
+        matchId: live.id,
+        winnerId,
+        practice,
+        prize: pool.prize,
+        players: live.players.map((p) => ({
+          id: p.id,
+          username: p.username,
+          avatar: p.avatar,
+          color: p.color,
+          isBot: !p.isHuman,
+        })),
+      });
+      if (live.escrowPda && live.partyId && houseCanSettle()) {
+        try {
+          await settleEscrowAsHouse({
+            partyId: live.partyId,
+            winnerAddress: result.winnerIsBot ? null : winnerId,
+            house: result.winnerIsBot || !winnerId,
+          });
+        } catch (err) {
+          console.error('escrow settle failed', err);
+        }
+      }
+      const msg: ServerMsg = { type: 'bomb_end', result };
+      for (const sock of live.sockets.values()) send(sock, msg);
+    } catch (err) {
+      console.error('bomb settle failed', err);
+      for (const sock of live.sockets.values()) {
+        send(sock, { type: 'error', message: 'Match could not be recorded.' });
+      }
+    } finally {
+      matches.delete(live.id);
+    }
+  })();
 }
 
 export async function handleMessage(sock: Sock, raw: string): Promise<void> {
@@ -111,6 +307,8 @@ export async function handleMessage(sock: Sock, raw: string): Promise<void> {
       send(sock, { type: 'error', message: 'Not enough demo credits' });
       return;
     }
+    const prior = queue.findIndex((q) => q.sock.userId === sock.userId);
+    if (prior >= 0) queue.splice(prior, 1);
     if (!queue.some((q) => q.sock === sock)) queue.push({ sock, since: Date.now() });
     send(sock, { type: 'queued', position: queue.length, players: queue.length });
     flushQueue();
@@ -135,38 +333,84 @@ export async function handleMessage(sock: Sock, raw: string): Promise<void> {
   }
 
   if (msg.type === 'party_join') {
-    const p = parties.get(msg.code.toUpperCase());
+    const code = msg.code.toUpperCase();
+    let p = parties.get(code);
     if (!p) {
-      send(sock, { type: 'error', message: 'Party not found' });
-      return;
+      p = { host: msg.asHost ? sock.userId : '', members: [], game: msg.game };
+      parties.set(code, p);
     }
+    if (msg.asHost) p.host = sock.userId;
+    if (msg.game) p.game = msg.game;
     if (!p.members.includes(sock)) p.members.push(sock);
     for (const m of p.members) {
-      send(m, { type: 'party', code: msg.code.toUpperCase(), members: partyMembers(msg.code.toUpperCase()) });
+      send(m, { type: 'party', code, members: partyMembers(code) });
+    }
+    return;
+  }
+
+  if (msg.type === 'party_leave') {
+    for (const [code, p] of parties) {
+      const next = p.members.filter((m) => m !== sock);
+      if (next.length === p.members.length) continue;
+      p.members = next;
+      if (!next.length) parties.delete(code);
+      else {
+        for (const m of next) send(m, { type: 'party', code, members: partyMembers(code) });
+      }
     }
     return;
   }
 
   if (msg.type === 'party_start') {
-    const found = [...parties.entries()].find(([, p]) => p.host === sock.userId);
-    if (!found) return;
-    const [, party] = found;
-    await startMatch(party.members.filter((m) => m.readyState === m.OPEN && m.userId));
+    const code = msg.code?.toUpperCase();
+    const found = code
+      ? ([code, parties.get(code)] as const)
+      : [...parties.entries()].find(([, p]) => p.host === sock.userId);
+    if (!found || !found[1]) return;
+    if (found[1].host && found[1].host !== sock.userId) return;
+    const members = found[1].members.filter((m) => m.readyState === m.OPEN && m.userId);
+    const db = await getParty(found[0]).catch(() => null);
+    const game = db?.gameSlug === 'bomb-party' || found[1].game === 'bomb-party' || msg.game === 'bomb-party'
+      ? 'bomb-party'
+      : 'tower';
+    if (game === 'bomb-party') {
+      await startBombMatch(members, {
+        partyId: found[0],
+        capacity: db?.capacity ?? Math.max(2, members.length),
+        escrowPda: db?.escrowPda,
+        entryLamports: db?.entryLamports,
+      });
+    } else {
+      await startMatch(members, {
+        partyId: found[0],
+        escrowPda: db?.escrowPda,
+      });
+    }
     parties.delete(found[0]);
     return;
   }
 
   if (msg.type === 'input') {
     const live = matches.get(msg.matchId);
-    if (!live) return;
+    if (!live || live.kind !== 'tower') return;
     live.engine.setInput(sock.userId, msg.input as TowerInput);
+    return;
+  }
+
+  if (msg.type === 'bomb_input') {
+    const live = matches.get(msg.matchId);
+    if (!live || live.kind !== 'bomb') return;
+    if (msg.key) live.engine.setKey(sock.userId, msg.key.dir, msg.key.pressed);
+    if (msg.move) live.engine.setMoveTarget(sock.userId, msg.move);
+    if (msg.taunt) live.engine.taunt(sock.userId, msg.taunt);
     return;
   }
 
   if (msg.type === 'leave_match') {
     const live = matches.get(msg.matchId);
     if (!live) return;
-    live.engine.forfeit(sock.userId);
+    if (live.kind === 'tower') live.engine.forfeit(sock.userId);
+    else live.engine.forfeit(sock.userId);
     live.sockets.delete(sock.userId);
   }
 }
@@ -175,7 +419,6 @@ export function detachSocket(sock: Sock): void {
   const i = queue.findIndex((q) => q.sock === sock);
   if (i >= 0) queue.splice(i, 1);
   if (!sock.userId) return;
-  // A dropped connection should not leave a statue standing on a platform.
   for (const live of matches.values()) {
     if (!live.sockets.has(sock.userId)) continue;
     live.engine.forfeit(sock.userId);

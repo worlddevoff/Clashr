@@ -27,6 +27,14 @@ import {
   savePartyLobby,
 } from '../lib/party';
 import {
+  fetchParty,
+  joinPartyState,
+  leavePartyState,
+  publishPartyState,
+  startPartyState,
+  touchPartyState,
+} from '../lib/partyRemote';
+import {
   clampStakeLamports,
   computeEscrowPool,
   createAndJoinEscrow,
@@ -49,6 +57,7 @@ import { ENTRY_FEE, PARTY_CAPACITIES, clampEntry } from '../types/party';
 import { cn } from '../utils/cn';
 import { formatSol } from '../utils/format';
 import { StakePicker } from '../components/game/StakePicker';
+import { solPotsEnabled } from '../lib/solPots';
 
 export function PartyPage() {
   const { partyId: rawId } = useParams();
@@ -56,6 +65,7 @@ export function PartyPage() {
   const partyId = (rawId ?? '').toUpperCase();
   const navigate = useNavigate();
   const { user, isAuthed } = useAuth();
+  const potsOn = solPotsEnabled();
 
   const capParam = Number(params.get('cap'));
   const savedLobby = loadPartyLobby(partyId);
@@ -83,6 +93,7 @@ export function PartyPage() {
 
   const partyRef = useRef<Party | null>(null);
   const channelRef = useRef<ReturnType<typeof openPartyChannel> | null>(null);
+  const onWireRef = useRef<(msg: PartyWireMessage) => void>(() => undefined);
   const escrowHostRef = useRef(false);
   const escrowJoinRef = useRef(false);
   const refundingRef = useRef(false);
@@ -101,9 +112,9 @@ export function PartyPage() {
   const isHost = !!party && party.hostId === selfId;
   const isPublic = party?.visibility === 'public';
   const selfStaked = !!selfId && deposits.includes(selfId);
-  const realPot = !!party && party.members.length >= 2;
+  const realPot = potsOn && !!party && party.members.length >= 2;
   const allStaked = !!party && party.members.every((m) => deposits.includes(m.id));
-  const canStart = !realPot || (allStaked && !staking);
+  const canStart = !potsOn || !realPot || (allStaked && !staking);
 
   // Keep public lobby listing in sync (host only)
   useEffect(() => {
@@ -115,7 +126,17 @@ export function PartyPage() {
     const listing = listingFromParty(party);
     if (listing) upsertPublicParty(listing);
     else removePublicParty(party.id);
+    void publishPartyState(party);
   }, [party, isHost]);
+
+  useEffect(() => {
+    if (!party || !isHost || party.status !== 'waiting') return;
+    void touchPartyState(party.id, party.hostId);
+    const tick = window.setInterval(() => {
+      void touchPartyState(party.id, party.hostId);
+    }, 20000);
+    return () => window.clearInterval(tick);
+  }, [party?.id, party?.hostId, party?.status, isHost]);
 
   useEffect(() => {
     if (!party) return;
@@ -235,60 +256,134 @@ export function PartyPage() {
     },
     [selfId, user, navigate, visibilityFromUrl, gameSlug],
   );
+  onWireRef.current = onWire;
 
   useEffect(() => {
     if (!isAuthed || !user || !partyId) return;
+    let cancelled = false;
 
-    const hostId = hostFromUrl || user.id;
     const self: PartyMember = {
       id: user.id,
       username: user.username,
       avatar: user.avatar,
       color: user.color,
-      isHost: user.id === hostId,
+      isHost: false,
       joinedAt: Date.now(),
     };
 
-    const initial: Party = {
-      id: partyId,
-      gameSlug,
-      capacity,
-      entry: entryFromUrl,
-      hostId,
-      createdAt: Date.now(),
-      status: 'waiting',
-      visibility: visibilityFromUrl,
-      members: [self],
-      escrowDeposits: [],
-      entryLamports: stakeFromUrl,
-    };
-    setParty(initial);
+    const bootstrap = async () => {
+      const remote = await fetchParty(partyId);
+      if (cancelled) return;
 
-    const channel = openPartyChannel(partyId, onWire);
-    channelRef.current = channel;
+      const hostId = remote?.hostId || hostFromUrl || user.id;
+      self.isHost = user.id === hostId;
+      let initial: Party =
+        remote ??
+        {
+          id: partyId,
+          gameSlug,
+          capacity,
+          entry: entryFromUrl,
+          hostId,
+          createdAt: Date.now(),
+          status: 'waiting',
+          visibility: visibilityFromUrl,
+          members: [],
+          escrowDeposits: [],
+          entryLamports: stakeFromUrl,
+        };
+      initial = mergeMember(initial, self);
 
-    const t = window.setTimeout(() => {
+      if (self.isHost) {
+        await publishPartyState(initial);
+      } else {
+        const joinError = await joinPartyState(partyId, self);
+        if (cancelled) return;
+        if (joinError) {
+          setError(joinError.replace(/^.*: /, ''));
+        }
+        const latest = await fetchParty(partyId);
+        if (latest) initial = mergeMember(latest, self);
+      }
+      if (cancelled) return;
+
+      if (initial.status === 'live' && initial.gamePath) {
+        savePartyRoster({
+          partyId: initial.id,
+          gameSlug: initial.gameSlug,
+          hostId: initial.hostId,
+          capacity: initial.capacity,
+          entry: initial.entry,
+          members: initial.members,
+          escrowPda: initial.escrowPda,
+          entryLamports: initial.entryLamports,
+        });
+        navigate(initial.gamePath);
+        return;
+      }
+
+      setParty(initial);
+      const channel = openPartyChannel(partyId, (msg) => onWireRef.current(msg));
+      channelRef.current = channel;
+      await channel.ready;
+      if (cancelled) {
+        channel.close();
+        return;
+      }
       channel.post({ type: 'hello', member: self });
       channel.post({ type: 'ping' });
-      if (self.isHost) {
-        channel.post({ type: 'sync', party: initial });
-      }
-    }, 40);
+      if (self.isHost) channel.post({ type: 'sync', party: initial });
+    };
 
+    void bootstrap();
     return () => {
-      window.clearTimeout(t);
+      cancelled = true;
       const current = partyRef.current;
-      if (current?.status === 'waiting') {
-        channel.post({ type: 'leave', memberId: user.id });
+      const channel = channelRef.current;
+      if (current?.status === 'waiting' && current.hostId !== user.id) {
+        channel?.post({ type: 'leave', memberId: user.id });
+        void leavePartyState(partyId, user.id);
       }
-      if (self.isHost) removePublicParty(partyId);
-      channel.close();
+      channel?.close();
       channelRef.current = null;
     };
-  }, [partyId, isAuthed, user, capacity, hostFromUrl, visibilityFromUrl, stakeFromUrl, entryFromUrl, gameSlug, onWire]);
+  }, [partyId, isAuthed, user, capacity, hostFromUrl, visibilityFromUrl, stakeFromUrl, entryFromUrl, gameSlug, navigate]);
 
   useEffect(() => {
-    if (!party || !user || !isHost || party.status !== 'waiting') return;
+    if (!partyId || party?.status === 'live') return;
+    const poll = window.setInterval(() => {
+      void fetchParty(partyId).then((remote) => {
+        if (!remote) return;
+        if (remote.status === 'live' && remote.gamePath) {
+          savePartyRoster({
+            partyId: remote.id,
+            gameSlug: remote.gameSlug,
+            hostId: remote.hostId,
+            capacity: remote.capacity,
+            entry: remote.entry,
+            members: remote.members,
+            escrowPda: remote.escrowPda,
+            entryLamports: remote.entryLamports,
+          });
+          navigate(remote.gamePath);
+          return;
+        }
+        setParty((prev) => {
+          if (!prev || prev.status === 'live') return prev;
+          return {
+            ...remote,
+            escrowDeposits: remote.escrowDeposits?.length ? remote.escrowDeposits : prev.escrowDeposits,
+            escrowPda: remote.escrowPda ?? prev.escrowPda,
+            entryLamports: remote.entryLamports ?? prev.entryLamports,
+          };
+        });
+      });
+    }, 2500);
+    return () => window.clearInterval(poll);
+  }, [partyId, party?.status, navigate]);
+
+  useEffect(() => {
+    if (!party || !user || !isHost || party.status !== 'waiting' || !potsOn) return;
     if (party.members.length < 2) return;
     if ((party.escrowDeposits ?? []).includes(user.id) || escrowHostRef.current) return;
     escrowHostRef.current = true;
@@ -316,7 +411,7 @@ export function PartyPage() {
   }, [party, user, isHost]);
 
   useEffect(() => {
-    if (!party || !user || isHost || party.status !== 'waiting') return;
+    if (!party || !user || isHost || party.status !== 'waiting' || !potsOn) return;
     if (party.members.length < 2 || !party.escrowPda) return;
     if ((party.escrowDeposits ?? []).includes(user.id) || escrowJoinRef.current) return;
     escrowJoinRef.current = true;
@@ -418,7 +513,10 @@ export function PartyPage() {
 
   const leave = () => {
     const current = partyRef.current;
-    if (user) channelRef.current?.post({ type: 'leave', memberId: user.id });
+    if (user) {
+      channelRef.current?.post({ type: 'leave', memberId: user.id });
+      void leavePartyState(partyId, user.id);
+    }
     if (isHost && party) removePublicParty(party.id);
     if (current?.status === 'waiting' && selfStaked) {
       void withdrawEscrow(current.id).catch(() => undefined);
@@ -429,7 +527,7 @@ export function PartyPage() {
   const start = async () => {
     if (!party || !isHost || starting) return;
     setError(null);
-    const paidMatch = party.members.length >= 2;
+    const paidMatch = potsOn && party.members.length >= 2;
     if (paidMatch && (!party.escrowPda || !allStaked)) {
       setError(`Every wallet in the lobby must stake ${formatSol(stakeSol)} before a real pot starts.`);
       return;
@@ -464,6 +562,7 @@ export function PartyPage() {
     savePartyLobby(party);
     const next: Party = { ...party, status: 'live', gamePath };
     setParty(next);
+    void startPartyState(party.id, party.hostId, gamePath);
     channelRef.current?.post({ type: 'start', party: next, gamePath, roster });
     navigate(gamePath);
   };
@@ -498,9 +597,10 @@ export function PartyPage() {
             {isPublic
               ? 'Stays listed in the lobby until the lobby fills — or you start early with bots.'
               : 'Invite friends with the link or code. Empty seats fill with bots when you start.'}{' '}
-            You all play the <span className="text-neon-cyan">same match</span>. SOL only
-            stakes when <span className="text-white/80">2+ wallets</span> are in — bots are
-            free.
+            You all play the <span className="text-neon-cyan">same match</span>.
+            {potsOn
+              ? ' SOL only stakes when 2+ wallets are in — bots are free.'
+              : ' Real SOL pots are off until house settlement is live.'}
           </p>
         </div>
       </div>
@@ -541,14 +641,16 @@ export function PartyPage() {
                 <UsersIcon className="h-4 w-4" />
                 {party?.members.length ?? 1}/{party?.capacity ?? '—'}
               </div>
-              {realPot && pool.prizePool > 0 ? (
+              {potsOn && realPot && pool.prizePool > 0 ? (
                 <div className="mt-1 font-display text-sm text-neon-lime">
                   Pot {formatSol(pool.prizePool)} · {formatSol(stakeSol)} each
                 </div>
-              ) : (
+              ) : potsOn ? (
                 <div className="mt-1 font-display text-sm text-white/50">
                   {formatSol(stakeSol)} / wallet · free until a second player joins
                 </div>
+              ) : (
+                <div className="mt-1 font-display text-sm text-white/50">Demo credits match</div>
               )}
             </div>
           </div>
@@ -578,6 +680,7 @@ export function PartyPage() {
             </div>
           </div>
 
+          {potsOn && (
           <div className="rounded-2xl border border-neon-amber/25 bg-ink-900/60 p-4">
             <StakePicker
               valueSol={stakeSol}
@@ -592,6 +695,7 @@ export function PartyPage() {
               }
             />
           </div>
+          )}
 
           <div>
             <div className="mb-3 flex items-center justify-between">

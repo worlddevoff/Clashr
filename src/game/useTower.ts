@@ -63,7 +63,13 @@ export function useLocalTower(fighters: TowerFighter[], humanId: string) {
   };
 }
 
-export function useNetworkTower(enabled: boolean) {
+export function useNetworkTower(opts: {
+  enabled: boolean;
+  partyId?: string | null;
+  isHost?: boolean;
+  expectedPlayers?: number;
+}) {
+  const { enabled, partyId = null, isHost = false, expectedPlayers = 0 } = opts;
   const [snap, setSnap] = useState<TowerSnapshot | null>(null);
   const [result, setResult] = useState<TowerMatchResult | null>(null);
   const [matchId, setMatchId] = useState<string | null>(null);
@@ -74,10 +80,18 @@ export function useNetworkTower(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return;
+    let started = false;
     const conn = connectTowerSocket((msg) => {
-      if (msg.type === 'hello') setStatus('online');
+      if (msg.type === 'hello') setStatus(partyId ? 'party' : 'online');
       if (msg.type === 'queued') setStatus(`queued ${msg.players}`);
       if (msg.type === 'error') setError(msg.message);
+      if (msg.type === 'party' && partyId && isHost && !started) {
+        const need = Math.max(expectedPlayers, 1);
+        if (msg.members.length >= need) {
+          started = true;
+          conn.send({ type: 'party_start', code: partyId });
+        }
+      }
       if (msg.type === 'match_start') {
         matchRef.current = msg.matchId;
         setMatchId(msg.matchId);
@@ -90,9 +104,24 @@ export function useNetworkTower(enabled: boolean) {
       }
     });
     sendRef.current = conn.send;
+    if (partyId) {
+      conn.send({ type: 'party_join', code: partyId, asHost: isHost });
+      setStatus('Joining party…');
+      const wait = window.setTimeout(() => {
+        if (!started && isHost) {
+          started = true;
+          conn.send({ type: 'party_start', code: partyId });
+        }
+      }, 4000);
+      return () => {
+        window.clearTimeout(wait);
+        conn.send({ type: 'party_leave' });
+        conn.close();
+      };
+    }
     conn.send({ type: 'queue' });
     return () => conn.close();
-  }, [enabled]);
+  }, [enabled, partyId, isHost, expectedPlayers]);
 
   const setInput = useCallback((input: TowerInput) => {
     const id = matchRef.current;

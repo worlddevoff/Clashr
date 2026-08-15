@@ -5,8 +5,8 @@ import type { Group, Mesh } from 'three';
 import * as THREE from 'three';
 import { generateTower } from '../../../shared/tower/generator';
 import type { TowerPlayerSnap, TowerSnapshot } from '../../../shared/tower/types';
-import { FLOOR_COUNT, FLOOR_HEIGHT } from '../../../shared/tower/constants';
-import { cameraForward, cameraRight, outsideCore } from '../../../shared/tower/camera';
+import { cameraForward, cameraOffset, lineHitsCore, outsideCore } from '../../../shared/tower/camera';
+import { FLOOR_COUNT, FLOOR_HEIGHT, TOWER_CORE_RADIUS } from '../../../shared/tower/constants';
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
@@ -139,10 +139,9 @@ function Players({
 }
 
 /**
- * Orbit camera. Yaw is owned by the player (mouse / Q-E) rather than derived
- * from the character's facing, so turning while running no longer whips the
- * view around. When the local player is out, `focusId` points at whoever they
- * are spectating.
+ * Chase camera behind and above the climber. Yaw is owned by the player
+ * (mouse / Q-E), not the character facing. The lens sits on a spherical
+ * orbit that matches `cameraForward`, so WASD always matches the picture.
  */
 type FadeRecord = {
   mesh: THREE.Mesh;
@@ -150,6 +149,11 @@ type FadeRecord = {
   transparent: boolean;
   depthWrite: boolean;
 };
+
+const CORE_KEEP = TOWER_CORE_RADIUS + 1.15;
+const LOOK_HEIGHT = 1.15;
+const LOOK_AHEAD = 0.7;
+const MIN_ARM = 4.2;
 
 function FollowCam({
   snap,
@@ -165,6 +169,10 @@ function FollowCam({
   distRef: { current: number };
 }) {
   const smoothed = useRef(new THREE.Vector3());
+  const focus = useRef(new THREE.Vector3());
+  const desired = useRef(new THREE.Vector3());
+  const toCam = useRef(new THREE.Vector3());
+  const lastFocus = useRef(focusId);
   const ready = useRef(false);
   const shakeSeed = useRef(Math.random() * 100);
   const ray = useRef(new THREE.Raycaster());
@@ -174,50 +182,70 @@ function FollowCam({
     const target = snap.players.find((p) => p.id === focusId) ?? snap.players[0];
     if (!target) return;
 
+    let snapLens = !ready.current;
+    if (lastFocus.current !== focusId) {
+      lastFocus.current = focusId;
+      snapLens = true;
+      ready.current = false;
+    }
+
     const cinematic = snap.camera === 'final';
     const close = snap.camera === 'fall' || snap.camera === 'ledge';
-    const dist = cinematic ? 16 : close ? Math.min(8, distRef.current) : distRef.current;
+    const dist = cinematic ? 14 : close ? Math.min(7.2, distRef.current) : distRef.current;
     const yaw = yawRef.current;
     const pitch = pitchRef.current;
+    const fwd = cameraForward(yaw);
 
-    const focus = new THREE.Vector3(target.x, target.y + 1.25, target.z);
+    // Look a little ahead and above the body so the next platform stays in frame
+    // and the player sits in the lower-middle of the screen.
+    focus.current.set(
+      target.x + fwd.x * LOOK_AHEAD,
+      target.y + LOOK_HEIGHT,
+      target.z + fwd.z * LOOK_AHEAD,
+    );
     if (!ready.current) {
-      smoothed.current.copy(focus);
+      smoothed.current.copy(focus.current);
       ready.current = true;
     }
-    // Follow the subject faster vertically than horizontally so long falls stay
-    // in frame without the view jittering during normal running.
-    const k = 1 - Math.pow(0.0025, dt);
-    smoothed.current.x = lerp(smoothed.current.x, focus.x, k);
-    smoothed.current.z = lerp(smoothed.current.z, focus.z, k);
-    smoothed.current.y = lerp(smoothed.current.y, focus.y, 1 - Math.pow(0.00002, dt));
+    const xyK = close ? 1 - Math.pow(0.0004, dt) : 1 - Math.pow(0.0025, dt);
+    const yK = close ? 1 - Math.pow(0.00001, dt) : 1 - Math.pow(0.00008, dt);
+    smoothed.current.x = lerp(smoothed.current.x, focus.current.x, xyK);
+    smoothed.current.z = lerp(smoothed.current.z, focus.current.z, xyK);
+    smoothed.current.y = lerp(smoothed.current.y, focus.current.y, yK);
 
-    // Sit opposite the look direction so the shared camera basis in
-    // `shared/tower/camera` matches what the player sees. A slight shoulder
-    // offset keeps the core from parking in the middle of the frame.
-    const fwd = cameraForward(yaw);
-    const right = cameraRight(yaw);
-    const shoulder = cinematic ? 0 : 1.35;
-    const flat = Math.cos(pitch) * dist;
-    const desired = new THREE.Vector3(
-      smoothed.current.x - fwd.x * flat + right.x * shoulder,
-      smoothed.current.y + Math.sin(pitch) * dist + 1.6,
-      smoothed.current.z - fwd.z * flat + right.z * shoulder,
+    const off = cameraOffset(yaw, pitch, dist);
+    desired.current.set(
+      smoothed.current.x + off.x,
+      smoothed.current.y + off.y,
+      smoothed.current.z + off.z,
     );
 
-    const clear = outsideCore(desired.x, desired.z, 2.15);
-    desired.x = clear.x;
-    desired.z = clear.z;
-
-    const shake = snap.shake * 0.25;
-    if (shake > 0.001) {
-      const t = shakeSeed.current + performance.now() / 90;
-      desired.x += Math.sin(t * 1.7) * shake;
-      desired.y += Math.cos(t * 2.3) * shake;
+    // Never park the lens inside the column. If the orbit would clip it, lift
+    // rather than sliding onto the cylinder (that used to fill the frame).
+    const inside = Math.hypot(desired.current.x, desired.current.z) < CORE_KEEP;
+    const through = lineHitsCore(
+      smoothed.current.x,
+      smoothed.current.z,
+      desired.current.x,
+      desired.current.z,
+      TOWER_CORE_RADIUS + 0.35,
+    );
+    if (inside) {
+      const pushed = outsideCore(desired.current.x, desired.current.z, CORE_KEEP);
+      desired.current.x = pushed.x;
+      desired.current.z = pushed.z;
+      desired.current.y = Math.max(desired.current.y, smoothed.current.y + dist * 0.45);
+    } else if (through) {
+      desired.current.y = Math.max(desired.current.y, smoothed.current.y + Math.max(5.2, dist * 0.62));
     }
 
-    // Ghost anything sitting on the line of sight so a slab or the core never
-    // hides the player you are trying to steer.
+    const shake = snap.shake * 0.18;
+    if (shake > 0.001) {
+      const t = shakeSeed.current + performance.now() / 90;
+      desired.current.x += Math.sin(t * 1.7) * shake;
+      desired.current.y += Math.cos(t * 2.3) * shake;
+    }
+
     for (const rec of faded.current) {
       const mat = rec.mesh.material;
       if (mat && !Array.isArray(mat) && 'opacity' in mat) {
@@ -229,15 +257,15 @@ function FollowCam({
     }
     faded.current = [];
 
-    const toCam = desired.clone().sub(smoothed.current);
-    const span = toCam.length();
+    toCam.current.copy(desired.current).sub(smoothed.current);
+    const span = toCam.current.length();
     if (span > 0.4) {
-      toCam.multiplyScalar(1 / span);
-      ray.current.set(smoothed.current, toCam);
-      ray.current.far = span - 0.35;
-      ray.current.near = 0.35;
+      toCam.current.multiplyScalar(1 / span);
+      ray.current.set(smoothed.current, toCam.current);
+      ray.current.far = span - 0.25;
+      ray.current.near = 0.4;
       const hits = ray.current.intersectObjects(scene.children, true);
-      let pulled = span;
+      let nearest = span;
       for (const hit of hits) {
         const mesh = hit.object as THREE.Mesh;
         if (!mesh.userData?.occlude) continue;
@@ -251,27 +279,29 @@ function FollowCam({
             depthWrite: std.depthWrite,
           });
           std.transparent = true;
-          std.opacity = 0.16;
+          std.opacity = 0.22;
           std.depthWrite = false;
         }
-        if (hit.distance < pulled) pulled = hit.distance;
+        if (hit.distance < nearest) nearest = hit.distance;
       }
-      // If a wall is right in front of the lens, slide in rather than clip.
-      if (pulled < span * 0.45) {
-        const keep = Math.max(2.4, pulled - 0.4);
-        desired.copy(smoothed.current).addScaledVector(toCam, keep);
-        const again = outsideCore(desired.x, desired.z, 2.15);
-        desired.x = again.x;
-        desired.z = again.z;
+      // Only slide in when a slab is about to swallow the lens — never when
+      // that would drop us inside the core.
+      if (nearest < MIN_ARM) {
+        const keep = Math.max(MIN_ARM, nearest - 0.35);
+        desired.current.copy(smoothed.current).addScaledVector(toCam.current, keep);
+        if (Math.hypot(desired.current.x, desired.current.z) < CORE_KEEP) {
+          desired.current.copy(smoothed.current).addScaledVector(toCam.current, span);
+        }
       }
     }
 
-    camera.position.lerp(desired, 1 - Math.pow(0.0008, dt));
+    if (snapLens) camera.position.copy(desired.current);
+    else camera.position.lerp(desired.current, 1 - Math.pow(0.00035, dt));
     camera.lookAt(smoothed.current);
 
     const cam = camera as THREE.PerspectiveCamera;
     if (cam.fov) {
-      const want = close ? 46 : cinematic ? 62 : 52;
+      const want = close ? 48 : cinematic ? 58 : 50;
       cam.fov = lerp(cam.fov, want, 1 - Math.pow(0.02, dt));
       cam.updateProjectionMatrix();
     }
@@ -282,9 +312,16 @@ function FollowCam({
 function TowerCore() {
   const h = FLOOR_COUNT * FLOOR_HEIGHT + 8;
   return (
-    <mesh position={[0, h / 2 - 2, 0]} receiveShadow userData={{ occlude: true }}>
+    <mesh position={[0, h / 2 - 2, 0]} receiveShadow>
       <cylinderGeometry args={[1.05, 1.25, h, 16]} />
-      <meshStandardMaterial color="#141428" emissive="#22e5ff" emissiveIntensity={0.12} />
+      <meshStandardMaterial
+        color="#141428"
+        emissive="#22e5ff"
+        emissiveIntensity={0.22}
+        transparent
+        opacity={0.42}
+        depthWrite={false}
+      />
     </mesh>
   );
 }
@@ -342,7 +379,7 @@ export function TowerCanvas({
     <div className="h-full w-full">
       <Canvas
         shadows
-        camera={{ position: [12, 10, 16], fov: 55 }}
+        camera={{ position: [0, 9, 12], fov: 50 }}
         dpr={[1, 1.5]}
         gl={{ antialias: true }}
         style={{ filter: snap.slowMo > 0 ? 'saturate(1.2) contrast(1.05)' : undefined }}

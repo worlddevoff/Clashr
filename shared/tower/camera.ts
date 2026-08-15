@@ -50,3 +50,45 @@ export function outsideCore(x: number, z: number, radius: number): PlanarVec {
   const s = radius / Math.max(r, 1e-4);
   return { x: x * s, z: z * s };
 }
+
+/**
+ * Yaw that puts the camera on the outward radial, looking toward the core.
+ * Spawn is on +Z at yaw 0, so a default yaw of 0 looks *through* the tower.
+ */
+export function outwardLookYaw(x: number, z: number): number {
+  const r = Math.hypot(x, z);
+  if (r < 1e-4) return Math.PI;
+  return Math.atan2(-x, -z);
+}
+
+/**
+ * Camera position relative to the look-at point. Matches `cameraForward` so
+ * WASD "forward" is the direction the lens actually faces.
+ */
+export function cameraOffset(yaw: number, pitch: number, dist: number): { x: number; y: number; z: number } {
+  const flat = Math.cos(pitch) * dist;
+  const f = cameraForward(yaw);
+  return {
+    x: -f.x * flat,
+    y: Math.sin(pitch) * dist,
+    z: -f.z * flat,
+  };
+}
+
+/** True if the xz segment from A to B passes within `radius` of the origin. */
+export function lineHitsCore(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  radius: number,
+): boolean {
+  const abx = bx - ax;
+  const abz = bz - az;
+  const len2 = abx * abx + abz * abz;
+  if (len2 < 1e-8) return Math.hypot(ax, az) < radius;
+  const t = Math.min(1, Math.max(0, -(ax * abx + az * abz) / len2));
+  const qx = ax + abx * t;
+  const qz = az + abz * t;
+  return qx * qx + qz * qz < radius * radius;
+}

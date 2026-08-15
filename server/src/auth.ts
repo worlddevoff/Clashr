@@ -31,7 +31,7 @@ export async function loginWithSignature(opts: {
   username?: string;
   avatar?: string;
   color?: string;
-}): Promise<{ token: string; userId: string }> {
+}): Promise<{ token: string; userId: string; isNew: boolean }> {
   const row = await prisma.authNonce.findUnique({ where: { nonce: opts.nonce } });
   if (!row || row.used || row.address !== opts.address) {
     throw new Error('Invalid or reused nonce');
@@ -47,6 +47,7 @@ export async function loginWithSignature(opts: {
 
   await prisma.authNonce.update({ where: { nonce: opts.nonce }, data: { used: true } });
 
+  const existed = await prisma.user.findUnique({ where: { id: opts.address } });
   const user = await prisma.user.upsert({
     where: { id: opts.address },
     create: {
@@ -56,11 +57,7 @@ export async function loginWithSignature(opts: {
       color: opts.color || '#22e5ff',
       account: { create: { balance: TOWER_STARTING_CREDITS } },
     },
-    update: {
-      username: opts.username || undefined,
-      avatar: opts.avatar || undefined,
-      color: opts.color || undefined,
-    },
+    update: {},
   });
 
   const existing = await prisma.creditAccount.findUnique({ where: { userId: user.id } });
@@ -79,7 +76,7 @@ export async function loginWithSignature(opts: {
       expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
     },
   });
-  return { token, userId: user.id };
+  return { token, userId: user.id, isNew: !existed };
 }
 
 export async function userFromToken(token: string | undefined) {

@@ -1,6 +1,8 @@
 # Arcade match escrow
 
-Per-match SOL pot: each human deposits entry into a PDA. When the match ends the host settles — winner receives pot − 5% fee, or the treasury keeps the pot if a bot wins.
+Per-match SOL pot: each human deposits entry into a PDA. When the match ends the **treasury/oracle** settles — winner receives pot − 5% fee, or the treasury keeps the pot if a bot wins. The host cannot settle.
+
+`HOUSE_SECRET_KEY` on the Node server must be the **treasury** keypair (`VITE_TREASURY_WALLET` / `TREASURY_WALLET`). After changing settle, **redeploy** this program before enabling `VITE_ENABLE_SOL_POTS`.
 
 ## Deploy
 

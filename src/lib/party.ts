@@ -9,6 +9,8 @@ import type {
 } from '../types/party';
 import { ENTRY_FEE } from '../types/party';
 import type { GameSlug } from '../../shared/games';
+import { fetchPublicParties } from './partyRemote';
+import { getSupabase } from './supabase';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROSTER_PREFIX = 'arcade.party.roster.';
@@ -227,50 +229,91 @@ export function listPublicParties(): PublicPartyListing[] {
 
 /** Live updates for the Play lobby public list. */
 export function subscribePublicParties(onChange: (list: PublicPartyListing[]) => void): () => void {
-  const emit = () => onChange(listPublicParties());
-  emit();
+  let stopped = false;
+  const emitLocal = () => onChange(listPublicParties());
+
+  const pull = () => {
+    void fetchPublicParties().then((remote) => {
+      if (stopped) return;
+      if (remote) onChange(remote);
+      else emitLocal();
+    });
+  };
+
+  pull();
   const onStorage = (e: StorageEvent) => {
-    if (e.key === PUBLIC_LIST_KEY) emit();
+    if (e.key === PUBLIC_LIST_KEY) emitLocal();
   };
   window.addEventListener('storage', onStorage);
   let channel: BroadcastChannel | null = null;
   try {
     channel = new BroadcastChannel(PUBLIC_CHANNEL);
-    channel.onmessage = () => emit();
+    channel.onmessage = () => emitLocal();
   } catch {
     /* ignore */
   }
-  const poll = window.setInterval(emit, 2500);
+
+  const poll = window.setInterval(pull, 4000);
   return () => {
+    stopped = true;
     window.removeEventListener('storage', onStorage);
     channel?.close();
     window.clearInterval(poll);
   };
 }
 
-/** Lightweight same-origin sync so invite links work across tabs/windows. */
+/** Cross-machine lobby sync (Supabase Realtime) with a same-tab BroadcastChannel fallback. */
 export function openPartyChannel(
   partyId: string,
   onMessage: (msg: PartyWireMessage) => void,
-): { post: (msg: PartyWireMessage) => void; close: () => void } {
+): { post: (msg: PartyWireMessage) => void; close: () => void; ready: Promise<void> } {
   const name = partyChannelName(partyId);
-  let channel: BroadcastChannel | null = null;
+  let local: BroadcastChannel | null = null;
   try {
-    channel = new BroadcastChannel(name);
-    channel.onmessage = (ev: MessageEvent<PartyWireMessage>) => {
+    local = new BroadcastChannel(name);
+    local.onmessage = (ev: MessageEvent<PartyWireMessage>) => {
       if (ev.data?.type) onMessage(ev.data);
     };
   } catch {
     /* BroadcastChannel unsupported */
   }
 
+  let settled = false;
+  let resolveReady: () => void = () => undefined;
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+  });
+
+  const sb = getSupabase();
+  const room = `clashr-party-${partyId.toUpperCase()}`;
+  const rt = sb
+    ? sb
+        .channel(room)
+        .on('broadcast', { event: 'wire' }, ({ payload }) => {
+          const msg = payload as PartyWireMessage;
+          if (msg?.type) onMessage(msg);
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') resolveReady();
+        })
+    : null;
+  if (!rt) resolveReady();
+  window.setTimeout(resolveReady, 2500);
+
   return {
+    ready,
     post(msg) {
-      channel?.postMessage(msg);
+      local?.postMessage(msg);
+      void rt?.send({ type: 'broadcast', event: 'wire', payload: msg });
     },
     close() {
-      channel?.close();
-      channel = null;
+      local?.close();
+      local = null;
+      if (rt && sb) void sb.removeChannel(rt);
     },
   };
 }

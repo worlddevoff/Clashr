@@ -3,118 +3,199 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id          String   @id
-  username    String
-  avatar      String
-  color       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  sessions    Session[]
-  account     CreditAccount?
-  ledger      LedgerEntry[]
+  id        String   @id
+  username  String
+  avatar    String   @default("🗼")
+  color     String   @default("#22e5ff")
+  level     Int      @default(1)
+  xp        Int      @default(0)
+  xpToNext  Int      @default(100) @map("xp_to_next")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  sessions  Session[]
+  account   CreditAccount?
+  ledger    LedgerEntry[]
+  leaderboard LeaderboardRow?
+  hostedParties Party[] @relation("PartyHost")
+  partyMemberships PartyMember[]
+
+  @@map("players")
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   nonce     String   @unique
   token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 model AuthNonce {
   nonce     String   @id
   address   String
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
   used      Boolean  @default(false)
+
+  @@index([address])
+  @@map("auth_nonces")
 }
 
 model CreditAccount {
-  userId    String   @id
-  user      User     @relation(fields: [userId], references: [id])
-  balance   Int
-  updatedAt DateTime @updatedAt
+  userId    String   @id @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("credit_accounts")
 }
 
 model LedgerEntry {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  matchId   String?
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matchId   String?  @map("match_id")
   kind      String
   amount    Int
-  note      String
-  createdAt DateTime @default(now())
+  note      String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([matchId])
+  @@map("ledger_entries")
 }
 
 model Match {
   id           String   @id
-  seed         Int
-  status       String
-  winnerId     String?
+  gameSlug     String   @default("tower") @map("game_slug")
+  seed         Int      @default(0)
+  status       String   @default("live")
+  practice     Boolean  @default(false)
+  winnerId     String?  @map("winner_id")
   prize        Int      @default(0)
   gross        Int      @default(0)
-  platformFee  Int      @default(0)
+  platformFee  Int      @default(0) @map("platform_fee")
   settled      Boolean  @default(false)
-  startedAt    DateTime @default(now())
-  finishedAt   DateTime?
+  startedAt    DateTime @default(now()) @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
   participants MatchParticipant[]
   events       ReplayEvent[]
   moments      DetectedMoment[]
+
+  @@index([gameSlug, startedAt])
+  @@index([winnerId])
+  @@map("matches")
 }
 
 model MatchParticipant {
-  matchId        String
-  userId         String
-  username       String
-  avatar         String
-  color          String
-  isBot          Boolean
-  placement      Int?
-  floorsReached  Int      @default(1)
-  shoves         Int      @default(0)
-  fallsSurvived  Int      @default(0)
-  creditsWon     Int      @default(0)
-  match          Match    @relation(fields: [matchId], references: [id])
+  matchId       String  @map("match_id")
+  userId        String  @map("user_id")
+  username      String
+  avatar        String
+  color         String
+  isBot         Boolean @default(false) @map("is_bot")
+  placement     Int?
+  floorsReached Int     @default(1) @map("floors_reached")
+  shoves        Int     @default(0)
+  fallsSurvived Int     @default(0) @map("falls_survived")
+  creditsWon    Int     @default(0) @map("credits_won")
+  match         Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
   @@id([matchId, userId])
+  @@index([userId])
+  @@map("match_participants")
 }
 
 model ReplayEvent {
-  id      String @id @default(cuid())
-  matchId String
+  id      String @id @default(uuid()) @db.Uuid
+  matchId String @map("match_id")
   t       Float
   kind    String
-  payload String
-  match   Match  @relation(fields: [matchId], references: [id])
+  payload Json   @default("{}")
+  match   Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, t])
+  @@map("replay_events")
 }
 
 model DetectedMoment {
-  id       String @id @default(cuid())
-  matchId  String
-  kind     String
-  headline String
-  player   String
-  avatar   String
-  color    String
-  stat     String
-  match    Match  @relation(fields: [matchId], references: [id])
+  id        String   @id @default(uuid()) @db.Uuid
+  matchId   String   @map("match_id")
+  kind      String
+  headline  String
+  player    String
+  avatar    String
+  color     String
+  stat      String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId])
+  @@index([createdAt])
+  @@map("match_moments")
 }
 
 model LeaderboardRow {
-  userId      String @id
+  userId      String   @id @map("user_id")
   username    String
   avatar      String
   color       String
-  wins        Int    @default(0)
-  gamesPlayed Int    @default(0)
-  biggestWin  Int    @default(0)
-  streak      Int    @default(0)
-  updatedAt   DateTime @updatedAt
+  wins        Int      @default(0)
+  gamesPlayed Int      @default(0) @map("games_played")
+  biggestWin  Int      @default(0) @map("biggest_win")
+  streak      Int      @default(0)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([wins, biggestWin])
+  @@map("leaderboard")
+}
+
+model Party {
+  id            String   @id
+  gameSlug      String   @map("game_slug")
+  capacity      Int
+  entry         Int      @default(0)
+  entryLamports BigInt?  @map("entry_lamports")
+  hostId        String   @map("host_id")
+  host          User     @relation("PartyHost", fields: [hostId], references: [id], onDelete: Cascade)
+  status        String   @default("waiting")
+  visibility    String   @default("private")
+  escrowPda     String?  @map("escrow_pda")
+  escrowDeposits Json    @default("[]") @map("escrow_deposits")
+  gamePath      String?  @map("game_path")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  members       PartyMember[]
+
+  @@index([visibility, status, createdAt])
+  @@index([hostId])
+  @@map("parties")
+}
+
+model PartyMember {
+  partyId  String   @map("party_id")
+  userId   String   @map("user_id")
+  username String
+  avatar   String
+  color    String
+  isHost   Boolean  @default(false) @map("is_host")
+  joinedAt DateTime @default(now()) @map("joined_at")
+  party    Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([partyId, userId])
+  @@index([userId])
+  @@map("party_members")
 }

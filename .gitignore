@@ -13,6 +13,9 @@ dist-ssr
 *.local
 .env
 .env.*.local
+*.pem
+*.key
+id.json
 solana/**/target
 server/prisma/dev.db
 server/prisma/dev.db-journal

@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.github
+.cursor
+.env
+.env.*
+*.db
+*.pem
+*.key
+.DS_Store
+supabase/.temp

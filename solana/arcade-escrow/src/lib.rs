@@ -7,7 +7,7 @@
 //! 1 join    — player deposits `entry_lamports`
 //! 2 withdraw — player leaves while status is Open
 //! 3 lock    — host freezes deposits/withdrawals (match start)
-//! 4 settle  — host pays winner − fee, or treasury if a bot won
+//! 4 settle  — treasury/oracle pays winner − fee, or treasury if a bot won
 
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -238,6 +238,7 @@ fn lock_match(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
 
 fn settle(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
     // winner [32] + house u8
+    // Settler MUST be the treasury (house/oracle). The match host cannot pay out.
     if data.len() < 33 {
         return Err(ProgramError::InvalidInstructionData);
     }
@@ -246,12 +247,12 @@ fn settle(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Program
     let house = data[32] != 0;
 
     let acc = &mut accounts.iter();
-    let host = next_account_info(acc)?;
+    let oracle = next_account_info(acc)?;
     let pda = next_account_info(acc)?;
     let treasury = next_account_info(acc)?;
     let winner = next_account_info(acc)?;
 
-    if !host.is_signer || !host.is_writable {
+    if !oracle.is_signer || !oracle.is_writable {
         return Err(ProgramError::MissingRequiredSignature);
     }
     if !pda.is_writable || !treasury.is_writable || !winner.is_writable {
@@ -262,7 +263,10 @@ fn settle(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Program
     let (entry, fee_bps, _cap, count, status, _bump, _party) = meta(pda)?;
     {
         let d = pda.try_borrow_data()?;
-        require_host(&d, host.key)?;
+        if oracle.key.as_ref() != &d[OFF_TREASURY..OFF_TREASURY + 32] {
+            msg!("settle requires the treasury oracle");
+            return Err(ProgramError::IllegalOwner);
+        }
         if &d[OFF_TREASURY..OFF_TREASURY + 32] != treasury.key.as_ref() {
             return Err(ProgramError::InvalidAccountData);
         }
@@ -283,7 +287,7 @@ fn settle(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Program
 
     let pot = entry.saturating_mul(count as u64);
     if pot == 0 {
-        close_pda(pda, host)?;
+        close_pda(pda, oracle)?;
         return Ok(());
     }
 
@@ -305,7 +309,7 @@ fn settle(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Program
         d[OFF_STATUS] = STATUS_SETTLED;
         d[OFF_COUNT] = 0;
     }
-    close_pda(pda, host)?;
+    close_pda(pda, oracle)?;
     Ok(())
 }
 

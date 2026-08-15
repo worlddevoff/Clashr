@@ -50,9 +50,13 @@ export interface FeaturedGame {
   slug: string;
   name: string;
   tagline: string;
+  description?: string;
   status: FeaturedGameStatus;
   accent: 'cyan' | 'magenta' | 'lime' | 'amber' | 'violet';
   emoji: string;
+  image?: string;
+  players?: string;
+  stakeRange?: string;
 }
 
 export interface LeaderboardEntry {

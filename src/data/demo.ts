@@ -6,11 +6,63 @@ import type {
 } from '../types/domain';
 
 export const FEATURED_GAMES: FeaturedGame[] = [
-  { slug: 'tower', name: 'Tower', tagline: 'Climb. Shove. Survive.', status: 'playable', accent: 'cyan', emoji: '🗼' },
-  { slug: 'bomb-party', name: 'Bomb Party', tagline: 'Pass it before it blows.', status: 'playable', accent: 'magenta', emoji: '💣' },
-  { slug: 'floor-is-cash', name: 'Floor Is Cash', tagline: "Don't touch the floor.", status: 'coming-soon', accent: 'lime', emoji: '💵' },
-  { slug: 'claw-chaos', name: 'Claw Chaos', tagline: 'Grab everything.', status: 'coming-soon', accent: 'amber', emoji: '🦾' },
-  { slug: 'rocket-run', name: 'Rocket Run', tagline: 'Boost or bust.', status: 'coming-soon', accent: 'violet', emoji: '🚀' },
+  {
+    slug: 'tower',
+    name: 'Tower',
+    tagline: 'Climb. Shove. Survive.',
+    description:
+      'Ten players race up a collapsing neon tower. Shove rivals off the ledges and be first to the WIN pad to take the whole pot.',
+    status: 'playable',
+    accent: 'cyan',
+    emoji: '🗼',
+    players: '2–10 players',
+    stakeRange: '0.05 – 5 SOL',
+    image: 'https://cdn.magicpatterns.com/patterns/generated-images/59cbd017-98b6-4332-aee5-4be04f41c3f4.jpg',
+  },
+  {
+    slug: 'bomb-party',
+    name: 'Bomb Party',
+    tagline: 'Pass it before it blows.',
+    description:
+      'A fuse, a circle, and no good options. Hold the bomb when it goes off and your stake goes with it.',
+    status: 'playable',
+    accent: 'magenta',
+    emoji: '💣',
+    players: '2–20 players',
+    stakeRange: '0.01 – 2 SOL',
+    image: 'https://cdn.magicpatterns.com/patterns/generated-images/8a05e56e-c8ac-4e65-94ef-7c8aff37969b.jpg',
+  },
+  {
+    slug: 'floor-is-cash',
+    name: 'Floor Is Cash',
+    tagline: "Don't touch the floor.",
+    description: 'Tiles drop out from under you every round. Last one standing clears the table.',
+    status: 'coming-soon',
+    accent: 'lime',
+    emoji: '💵',
+    players: '4–12 players',
+    image: 'https://cdn.magicpatterns.com/patterns/generated-images/3d279f58-d018-4e96-aea9-7fb9835186a0.jpg',
+  },
+  {
+    slug: 'claw-chaos',
+    name: 'Claw Chaos',
+    tagline: 'Grab everything.',
+    description: 'Compete for the same prize pile with one unreliable claw.',
+    status: 'coming-soon',
+    accent: 'amber',
+    emoji: '🦾',
+    players: '2–6 players',
+  },
+  {
+    slug: 'rocket-run',
+    name: 'Rocket Run',
+    tagline: 'Boost or bust.',
+    description: 'Ride the multiplier as long as your nerve holds. Cash out before the rocket dies.',
+    status: 'coming-soon',
+    accent: 'violet',
+    emoji: '🚀',
+    players: '1–50 players',
+  },
 ];
 
 export const LIVE_GAMES: LiveGame[] = [];

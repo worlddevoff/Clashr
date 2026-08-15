@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -12,12 +12,27 @@ body,
 #root {
   height: 100%;
 }
+html {
+  scroll-behavior: smooth;
+}
 body {
-  background-color: #06060b;
-  color: #f4f4fb;
-  font-family: 'Sora', system-ui, sans-serif;
+  background-color: #08060e;
+  color: #f4f0fb;
+  font-family: 'Inter', 'Sora', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+.eyebrow {
+  font-family: 'Chakra Petch', system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -55,9 +70,9 @@ body {
   }
   .bg-grid {
     background-image:
-      linear-gradient(rgba(120, 120, 200, 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(120, 120, 200, 0.05) 1px, transparent 1px);
-    background-size: 44px 44px;
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 64px 64px;
   }
 }
 

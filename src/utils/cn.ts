@@ -5,9 +5,9 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
 }
 
 export const ACCENT_HEX: Record<string, string> = {
-  cyan: '#22e5ff',
-  magenta: '#ff2ea8',
-  lime: '#b2ff59',
+  cyan: '#2fe0f0',
+  magenta: '#ff2f9e',
+  lime: '#c9f74a',
   amber: '#ffb020',
-  violet: '#a06bff',
+  violet: '#a78bfa',
 };

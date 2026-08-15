@@ -174,7 +174,7 @@ export function HeroBombPreview() {
           engineRef.current?.setKey(PREVIEW_ID, direction, false);
         }
       }}
-      className="group relative w-full overflow-hidden rounded-[1.75rem] border border-white/10 bg-ink-900 shadow-[0_30px_90px_-32px_rgba(160,107,255,0.55)]"
+          className="group relative w-full overflow-hidden rounded-xl border-0 bg-ink-900 shadow-none"
       aria-label={demoStatus === 'playing' ? 'Bomb Party playable demo' : undefined}
     >
       <div className="pointer-events-none absolute -inset-px z-50 rounded-[1.75rem] bg-[linear-gradient(120deg,rgba(178,255,89,.6),transparent_18%,transparent_78%,rgba(160,107,255,.7))] p-px opacity-60">

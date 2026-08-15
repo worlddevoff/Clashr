@@ -17,40 +17,51 @@ export function TopNav({ onAuth }: { onAuth: () => void }) {
   const navigate = useNavigate();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-ink-700/80 bg-ink-950/85 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6">
-        <NavLink to="/" className="shrink-0">
+    <header className="sticky top-0 z-50 border-b border-line bg-ink-950/85 backdrop-blur-md">
+      <div className="mx-auto flex h-16 w-full max-w-[1240px] items-center gap-8 px-5 lg:px-8">
+        <NavLink to="/" className="shrink-0" aria-label="CLASHR home">
           <Logo />
         </NavLink>
 
-        <nav className="ml-4 hidden items-center gap-1 lg:flex">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                cn(
-                  'rounded-lg px-3 py-2 font-display text-xs uppercase tracking-wide transition-colors duration-150',
-                  isActive ? 'bg-ink-800 text-neon-cyan' : 'text-white/55 hover:text-white',
-                )
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+        <nav aria-label="Main" className="hidden lg:block">
+          <ul className="flex items-center gap-1">
+            {NAV_ITEMS.map((item) => (
+              <li key={item.to}>
+                <NavLink
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    cn(
+                      'rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150 ease-snap',
+                      isActive ? 'bg-white/5 text-white' : 'text-muted hover:bg-white/5 hover:text-white',
+                    )
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              </li>
+            ))}
+            <li>
+              <a
+                href="/#how-it-works"
+                className="rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 ease-snap hover:bg-white/5 hover:text-white"
+              >
+                How it works
+              </a>
+            </li>
+          </ul>
         </nav>
 
-        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+        <div className="ml-auto flex items-center gap-2.5">
           {isAuthed ? (
             <>
-              <WalletButton className="hidden md:inline-flex" />
-              <Button size="sm" className="hidden sm:inline-flex" onClick={() => navigate('/play')}>
-                <PlayIcon className="h-4 w-4" /> Play
+              <WalletButton className="hidden sm:inline-flex" />
+              <Button size="sm" className="hidden rounded-md sm:inline-flex" onClick={() => navigate('/play')}>
+                <PlayIcon className="h-4 w-4" /> Play now
               </Button>
               <NavLink to="/profile" aria-label="Profile">
                 <span
-                  className="grid h-9 w-9 place-items-center rounded-xl border text-lg"
+                  className="grid h-9 w-9 place-items-center rounded-md border text-lg"
                   style={{ borderColor: user?.color, boxShadow: `0 0 14px ${user?.color}55` }}
                 >
                   {user?.avatar}
@@ -58,9 +69,14 @@ export function TopNav({ onAuth }: { onAuth: () => void }) {
               </NavLink>
             </>
           ) : (
-            <Button size="sm" onClick={onAuth}>
-              Connect wallet
-            </Button>
+            <>
+              <Button size="sm" variant="secondary" className="hidden rounded-md sm:inline-flex" onClick={onAuth}>
+                Connect wallet
+              </Button>
+              <Button size="sm" className="rounded-md" onClick={() => navigate('/play')}>
+                <PlayIcon className="h-4 w-4" /> Play now
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -70,7 +86,7 @@ export function TopNav({ onAuth }: { onAuth: () => void }) {
 
 export function BottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-ink-700 bg-ink-950/95 backdrop-blur-xl lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-line bg-ink-950/95 backdrop-blur-xl lg:hidden">
       <div className="mx-auto grid max-w-lg grid-cols-3">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
@@ -83,7 +99,7 @@ export function BottomNav() {
               className={({ isActive }) =>
                 cn(
                   'flex flex-col items-center gap-1 py-2.5 text-[10px] font-display uppercase tracking-wide transition-colors duration-150',
-                  isActive ? 'text-neon-cyan' : 'text-white/45',
+                  isActive ? 'text-neon-cyan' : 'text-muted',
                 )
               }
             >
@@ -91,7 +107,7 @@ export function BottomNav() {
                 <>
                   <span
                     className={cn(
-                      'grid h-8 w-8 place-items-center rounded-xl transition-colors',
+                      'grid h-8 w-8 place-items-center rounded-md transition-colors',
                       isPlay && 'bg-neon-magenta text-white shadow-glow-magenta',
                       !isPlay && isActive && 'bg-ink-800',
                     )}

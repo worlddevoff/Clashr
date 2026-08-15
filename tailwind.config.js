@@ -5,27 +5,34 @@ export default {
     extend: {
       colors: {
         ink: {
-          950: '#06060b',
-          900: '#0b0b15',
-          850: '#101021',
-          800: '#15152b',
-          700: '#1d1d38',
-          600: '#2a2a4d',
+          950: '#08060e',
+          900: '#0f0c1a',
+          850: '#171230',
+          800: '#1c1838',
+          700: '#252048',
+          600: '#3a3458',
         },
+        muted: '#948cae',
+        line: 'rgba(255,255,255,0.09)',
         neon: {
-          cyan: '#22e5ff',
-          magenta: '#ff2ea8',
-          lime: '#b2ff59',
+          cyan: '#2fe0f0',
+          magenta: '#ff2f9e',
+          lime: '#c9f74a',
           amber: '#ffb020',
-          violet: '#a06bff',
+          violet: '#a78bfa',
+          soft: '#ff7bc2',
         },
       },
       fontFamily: {
-        sans: ['Sora', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'Sora', 'system-ui', 'sans-serif'],
         display: ['Chakra Petch', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        panel: '0 20px 60px -20px rgba(0,0,0,0.7)',
+        panel: '0 30px 80px -40px rgba(0,0,0,0.9)',
+        glow: '0 0 0 1px rgba(255,47,158,0.35), 0 18px 60px -20px rgba(255,47,158,0.45)',
+      },
+      transitionTimingFunction: {
+        snap: 'cubic-bezier(0.23, 1, 0.32, 1)',
       },
       keyframes: {
         'pulse-ring': {

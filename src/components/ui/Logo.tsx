@@ -1,16 +1,18 @@
 import { cn } from '../../utils/cn';
+import { SITE_TITLE } from '../../lib/brand';
 
 export function Logo({ className, compact }: { className?: string; compact?: boolean }) {
   return (
-    <span className={cn('inline-flex items-center', className)}>
-      <img
-        src="/clashr-wordmark.png"
-        alt="Clashr: Crypto PvP Games & Online Gaming"
-        className={cn(
-          'w-auto object-contain object-left mix-blend-screen',
-          compact ? 'h-6' : 'h-7 sm:h-8',
-        )}
-      />
+    <span
+      className={cn(
+        'inline-flex items-baseline font-display font-bold tracking-tight text-white',
+        compact ? 'text-lg' : 'text-xl sm:text-2xl',
+        className,
+      )}
+      aria-label={SITE_TITLE}
+    >
+      CLASH
+      <span className="text-[#ff2b2b] drop-shadow-[0_0_8px_rgba(255,43,43,0.55)]">R</span>
     </span>
   );
 }

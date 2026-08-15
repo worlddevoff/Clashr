@@ -37,7 +37,7 @@ export function AuthGate({ onAuth }: { onAuth: () => void }) {
       </motion.div>
       <h1 className="relative">
         <span className="sr-only">{SITE_TITLE}</span>
-        <Logo className="[&_img]:h-12 sm:[&_img]:h-16" />
+        <Logo className="text-4xl sm:text-5xl" />
       </h1>
       <p className="relative mt-3 max-w-md text-white/60">
         {SITE_TAGLINE}. Connect a Solana wallet to play — including free games vs bots.

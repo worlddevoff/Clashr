@@ -29,17 +29,19 @@ export function WalletButton({ className }: { className?: string }) {
         onClick={onClick}
         disabled={connecting}
         className={cn(
-          'inline-flex items-center gap-2 rounded-xl border bg-ink-800 px-3 py-2 font-display text-xs uppercase tracking-wide transition-colors duration-150 ease-out disabled:opacity-50',
+          'inline-flex items-center gap-2 rounded-md border bg-ink-900 px-3 py-2 text-sm transition-colors duration-150 ease-snap disabled:opacity-50',
           isAuthed
-            ? 'border-ink-600 text-white/80 hover:border-neon-cyan/60 hover:text-neon-cyan'
+            ? 'border-line text-white hover:border-white/20'
             : 'border-dashed border-neon-cyan/40 text-neon-cyan/80 hover:border-neon-cyan hover:text-neon-cyan',
           className,
         )}
       >
         {isAuthed ? (
           <>
-            <LogOutIcon className="h-4 w-4" aria-hidden />
-            {user?.walletAddress ? shortAddress(user.walletAddress) : 'Disconnect'}
+            <WalletIcon className="h-4 w-4 text-neon-cyan" aria-hidden />
+            <span className="font-medium">{user?.walletAddress ? shortAddress(user.walletAddress) : 'Wallet'}</span>
+            <span className="text-muted">·</span>
+            <LogOutIcon className="h-3.5 w-3.5 text-muted" aria-hidden />
           </>
         ) : (
           <>

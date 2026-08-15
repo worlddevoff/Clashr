@@ -24,12 +24,26 @@ npm run build
 npm start        # production Node (serves /api, /ws, and dist/ if present)
 ```
 
-Local Vite proxies `/api` and `/ws` to `http://127.0.0.1:3001`. In production set `VITE_API_ORIGIN` at **build** time if the SPA and Node are on different hosts.
+Local Vite proxies `/api` and `/ws` to `http://127.0.0.1:3001`.
 
-## Production
+## Production (Railway)
 
-- **SPA:** Vercel (`vercel.json` SPA fallback). Bake `VITE_*` at build time.
-- **API + WebSocket:** Docker/`npm start` on Fly, Railway, or a VM. Needs `DATABASE_URL`, `DIRECT_URL`, `PORT`, and `CORS_ORIGINS`.
+One service runs the website, `/api`, and `/ws`. Do not put the match server on Vercel.
+
+1. [railway.app](https://railway.app) → New Project → Deploy from GitHub → `worlddevoff/Clashr`.
+2. Variables (mark `VITE_*` available at **build** time):
+
+   - `DATABASE_URL` — Supabase pooler URI, port `6543`, `?pgbouncer=true`
+   - `DIRECT_URL` — Supabase URI, port `5432`
+   - `NODE_ENV=production`
+   - `VITE_SUPABASE_URL=https://cbfyrkxzgtxoypewdouf.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` — publishable / anon key (not `service_role`)
+
+3. Settings → Networking → Generate domain. Leave `VITE_API_ORIGIN` empty (same host).
+4. Redeploy after adding variables so the frontend rebuilds.
+
+`PORT` is set by Railway. Same-origin play does not need `CORS_ORIGINS`. Leave `VITE_ENABLE_SOL_POTS` unset until escrow is ready.
+
 - **SOL pots:** off unless `VITE_ENABLE_SOL_POTS=1` **and** `HOUSE_SECRET_KEY` is the treasury keypair. Redeploy `solana/arcade-escrow` so settle requires that oracle. Then smoke-test two wallets on **devnet** before mainnet.
 - Party create/join/start goes through session-authenticated `/api/parties`.
 

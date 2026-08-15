@@ -387,7 +387,7 @@ wss.on('connection', async (ws: WebSocket, req) => {
 
 void (async () => {
   await ensureHouse();
-  server.listen(PORT, () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`CLASHR server on :${PORT}`);
     console.log(CREDITS_DISCLAIMER);
   });

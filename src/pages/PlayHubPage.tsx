@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PlayIcon } from 'lucide-react';
 import { FEATURED_GAMES } from '../data/demo';
@@ -5,10 +6,16 @@ import { buttonClasses } from '../components/ui/buttonClasses';
 import { ACCENT_HEX } from '../utils/cn';
 import { playPath } from '../../shared/games';
 import type { GameSlug } from '../../shared/games';
+import { subscribePublicParties } from '../lib/party';
+import type { PublicPartyListing } from '../types/party';
+import { OpenTables } from '../components/home/OpenTables';
 
 export function PlayHubPage() {
   const navigate = useNavigate();
   const playable = FEATURED_GAMES.filter((g) => g.status === 'playable');
+  const [publicParties, setPublicParties] = useState<PublicPartyListing[]>([]);
+
+  useEffect(() => subscribePublicParties(setPublicParties), []);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -37,6 +44,9 @@ export function PlayHubPage() {
             </button>
           );
         })}
+      </div>
+      <div className="-mx-4 mt-4 sm:-mx-6">
+        <OpenTables parties={publicParties} />
       </div>
     </div>
   );

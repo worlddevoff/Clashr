@@ -14,6 +14,7 @@ import { Button } from '../components/ui/Button';
 import { StakePicker } from '../components/game/StakePicker';
 import { useAuth } from '../contexts/AuthContext';
 import { createParty, parsePartyCode, subscribePublicParties } from '../lib/party';
+import { publishPartyState } from '../lib/partyRemote';
 import {
   clampStakeLamports,
   computeEscrowPool,
@@ -88,9 +89,11 @@ export function TowerLobbyPage() {
       },
     });
     const stakeQ = entryLamports ? `&stake=${entryLamports}` : '';
-    navigate(
-      `/party/${party.id}?game=tower&cap=${capacity}&host=${encodeURIComponent(party.hostId)}&vis=${visibility}${stakeQ}`,
-    );
+    void publishPartyState(party).then(() => {
+      navigate(
+        `/party/${party.id}?game=tower&cap=${capacity}&host=${encodeURIComponent(party.hostId)}&vis=${visibility}${stakeQ}`,
+      );
+    });
   };
 
   const joinPublic = (listing: PublicPartyListing) => {

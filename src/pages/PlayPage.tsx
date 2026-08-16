@@ -16,6 +16,7 @@ import { LOBBY_ROOMS } from '../data/demo';
 import { useSolPots } from '../contexts/SolPotsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { createParty, parsePartyCode, subscribePublicParties } from '../lib/party';
+import { publishPartyState } from '../lib/partyRemote';
 import {
   clampStakeLamports,
   computeEscrowPool,
@@ -81,9 +82,11 @@ export function PlayPage() {
       },
     });
     const stakeQ = entryLamports ? `&stake=${entryLamports}` : '';
-    navigate(
-      `/party/${party.id}?game=bomb-party&cap=${party.capacity}&host=${encodeURIComponent(party.hostId)}&vis=${visibility}${stakeQ}`,
-    );
+    void publishPartyState(party).then(() => {
+      navigate(
+        `/party/${party.id}?game=bomb-party&cap=${party.capacity}&host=${encodeURIComponent(party.hostId)}&vis=${visibility}${stakeQ}`,
+      );
+    });
   };
 
   const joinPublic = (listing: PublicPartyListing) => {

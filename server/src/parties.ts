@@ -216,7 +216,7 @@ export async function getParty(partyId: string): Promise<Party | null> {
 }
 
 export async function listPublicParties() {
-  const cutoff = new Date(Date.now() - 3 * 60 * 1000);
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000);
   const rows = await prisma.party.findMany({
     where: { visibility: 'public', status: 'waiting', updatedAt: { gt: cutoff } },
     include: { members: true },

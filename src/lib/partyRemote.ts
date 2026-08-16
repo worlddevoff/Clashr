@@ -136,8 +136,8 @@ export function mapRemoteParty(raw: unknown): Party | null {
 
 export async function fetchPublicParties(): Promise<PublicPartyListing[] | null> {
   try {
-    const data = await apiJson<{ parties: PublicPartyListing[] }>('/api/parties');
-    return data.parties;
+    const data = await apiJson<{ parties: unknown }>('/api/parties');
+    return mapPublicListings(data.parties);
   } catch {
     return null;
   }

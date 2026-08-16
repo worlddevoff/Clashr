@@ -253,7 +253,7 @@ export function subscribePublicParties(onChange: (list: PublicPartyListing[]) =>
     /* ignore */
   }
 
-  const poll = window.setInterval(pull, 4000);
+  const poll = window.setInterval(pull, 2000);
   return () => {
     stopped = true;
     window.removeEventListener('storage', onStorage);

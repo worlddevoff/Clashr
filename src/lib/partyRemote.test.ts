@@ -23,6 +23,26 @@ describe('public party mapping', () => {
     expect(list[0]?.memberCount).toBe(2);
   });
 
+  it('maps camelCase lobby rows from GET /api/parties', () => {
+    const list = mapPublicListings([
+      {
+        id: 'FASWEM',
+        gameSlug: 'bomb-party',
+        capacity: 2,
+        entry: 50,
+        entryLamports: 4_000_000,
+        hostId: 'Host111',
+        hostName: 'Host',
+        memberCount: 1,
+        createdAt: 1_786_893_627_969,
+      },
+    ]);
+    expect(list).toHaveLength(1);
+    expect(list[0]?.id).toBe('FASWEM');
+    expect(list[0]?.gameSlug).toBe('bomb-party');
+    expect(list[0]?.memberCount).toBe(1);
+  });
+
   it('maps camelCase parties from the match server', () => {
     const party = mapRemoteParty({
       id: '42vkm6',

@@ -103,6 +103,15 @@ model Match {
   gross        Int      @default(0)
   platformFee  Int      @default(0) @map("platform_fee")
   settled      Boolean  @default(false)
+  escrowStatus String   @default("not_required") @map("escrow_status")
+  escrowPartyId String? @map("escrow_party_id")
+  escrowWinnerAddress String? @map("escrow_winner_address")
+  escrowHouse  Boolean  @default(false) @map("escrow_house")
+  escrowSignature String? @map("escrow_signature")
+  escrowAttempts Int    @default(0) @map("escrow_attempts")
+  escrowError  String?  @map("escrow_error")
+  escrowSubmittedAt DateTime? @map("escrow_submitted_at")
+  escrowSettledAt DateTime? @map("escrow_settled_at")
   startedAt    DateTime @default(now()) @map("started_at")
   finishedAt   DateTime? @map("finished_at")
   participants MatchParticipant[]
@@ -111,6 +120,7 @@ model Match {
 
   @@index([gameSlug, startedAt])
   @@index([winnerId])
+  @@index([escrowStatus])
   @@map("matches")
 }
 

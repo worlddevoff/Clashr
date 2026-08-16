@@ -44,10 +44,23 @@ One service runs the website, `/api`, and `/ws`. Do not deploy this repository a
 
 `PORT` is set by Railway. Same-origin play does not need `CORS_ORIGINS`.
 
-- **SOL pots** turn on when `HOUSE_SECRET_KEY` (house oracle signer) is set **and** `solana/arcade-escrow` is deployed on the cluster in `VITE_SOLANA_CLUSTER` (start on **devnet**). The SPA reads `/api/config` — do not set `VITE_ENABLE_SOL_POTS`. Set `TREASURY_WALLET` / `VITE_TREASURY_WALLET` to the public fee-receive address (5% + bot-win pots). That address does **not** need to match the oracle. Also set `ESCROW_PROGRAM_ID` / `VITE_ESCROW_PROGRAM_ID`. Optional `SOLANA_RPC` (Node only, never `VITE_*`) is used by `POST /api/solana/rpc` so wallets never hit public Devnet from the browser.
+- **SOL pots** turn on only when the server has `ENABLE_SOL_POTS=1`, `HOUSE_SECRET_KEY` (house oracle signer) is set, and `solana/arcade-escrow` is executable on `SOLANA_CLUSTER` / `VITE_SOLANA_CLUSTER` (start on **devnet**). The server verifies every paid escrow's PDA, host, treasury, oracle, stake, lock state, and complete player list on-chain before starting a match. Winner payouts persist the intended recipient, submission signature, confirmation state, and retry count; interrupted or failed submissions are reconciled every 30 seconds. Set `TREASURY_WALLET` / `VITE_TREASURY_WALLET` to the public fee-receive address (5% + bot-win pots), plus `ESCROW_PROGRAM_ID` / `VITE_ESCROW_PROGRAM_ID`. Optional `SOLANA_RPC` (Node only, never `VITE_*`) is used by `POST /api/solana/rpc`.
 - Smoke-test two wallets on devnet (create party → both deposit → play → winner paid, host cannot settle) before mainnet.
 - Party create/join/start goes through session-authenticated `/api/parties`.
 - Terms, privacy, and an 18+ gate live at `/terms`, `/privacy`, `/responsible-play`.
+
+### Real SOL launch gate
+
+Do not set `ENABLE_SOL_POTS=1` on mainnet until the escrow program has been independently audited and the complete two-wallet flow has passed on devnet. For mainnet, set all of:
+
+- `SOLANA_CLUSTER=mainnet-beta` and `VITE_SOLANA_CLUSTER=mainnet-beta`
+- `ESCROW_PROGRAM_ID` and `VITE_ESCROW_PROGRAM_ID` to the audited mainnet deployment
+- `TREASURY_WALLET` and `VITE_TREASURY_WALLET` to the production fee wallet
+- `SOLANA_RPC` to a private production RPC endpoint
+- `HOUSE_SECRET_KEY` to the production oracle signer, stored only as a Railway secret
+- `ENABLE_SOL_POTS=1` only after every value above is confirmed
+
+When real-money mode is requested, `/api/health` returns `503` until the oracle key, explicit mainnet configuration, and executable escrow program all validate. Railway will not route traffic to a misconfigured real-money deployment.
 
 ## Supabase
 

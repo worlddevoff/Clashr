@@ -61,7 +61,7 @@ export function oraclePubkey(): string | null {
 }
 
 export function clusterName(): string {
-  return process.env.VITE_SOLANA_CLUSTER?.trim() || process.env.SOLANA_CLUSTER?.trim() || 'devnet';
+  return process.env.SOLANA_CLUSTER?.trim() || process.env.VITE_SOLANA_CLUSTER?.trim() || 'devnet';
 }
 
 export function rpcUrl(): string {
@@ -86,6 +86,21 @@ export function rpcUrl(): string {
 export async function refreshPotsReady(): Promise<boolean> {
   if (probing) return probing;
   probing = (async () => {
+    if (process.env.ENABLE_SOL_POTS !== '1') {
+      potsReady = false;
+      potsReason = 'disabled';
+      return false;
+    }
+    if (
+      clusterName() === 'mainnet-beta' &&
+      (!process.env.ESCROW_PROGRAM_ID?.trim() ||
+        !process.env.TREASURY_WALLET?.trim() ||
+        !process.env.SOLANA_RPC?.trim())
+    ) {
+      potsReady = false;
+      potsReason = 'mainnet_config_missing';
+      return false;
+    }
     const oracle = houseKeypair();
     if (!oracle) {
       potsReady = false;
@@ -123,6 +138,9 @@ function partyPda(partyId: string, program: PublicKey): PublicKey {
 
 export interface EscrowState {
   pda: string;
+  authority: string;
+  treasury: string;
+  oracle: string;
   entryLamports: number;
   status: number;
   players: string[];
@@ -146,6 +164,9 @@ export async function fetchEscrowState(partyId: string): Promise<EscrowState | n
   }
   return {
     pda: pda.toBase58(),
+    authority: new PublicKey(data.subarray(8, 40)).toBase58(),
+    treasury: new PublicKey(data.subarray(40, 72)).toBase58(),
+    oracle: new PublicKey(data.subarray(72, 104)).toBase58(),
     entryLamports: Number(data.readBigUInt64LE(136)),
     status: data[148] ?? 0,
     players,
@@ -157,6 +178,7 @@ export async function settleEscrowAsHouse(opts: {
   partyId: string;
   winnerAddress: string | null;
   house: boolean;
+  onSubmitted?: (signature: string) => Promise<void>;
 }): Promise<string | null> {
   const oracle = houseKeypair();
   if (!oracle || !potsReady) return null;
@@ -185,23 +207,30 @@ export async function settleEscrowAsHouse(opts: {
     data,
   });
   const connection = new Connection(rpcUrl(), 'confirmed');
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-      const tx = new Transaction({
-        feePayer: oracle.publicKey,
-        blockhash,
-        lastValidBlockHeight,
-      }).add(ix);
-      tx.sign(oracle);
-      const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
-      await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
-      return sig;
-    } catch (err) {
-      lastErr = err;
-      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
-    }
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+  const tx = new Transaction({
+    feePayer: oracle.publicKey,
+    blockhash,
+    lastValidBlockHeight,
+  }).add(ix);
+  tx.sign(oracle);
+  const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+  await opts.onSubmitted?.(signature);
+  await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+  return signature;
+}
+
+export async function escrowSignatureStatus(
+  signature: string,
+): Promise<'pending' | 'confirmed' | 'failed' | 'unknown'> {
+  const response = await new Connection(rpcUrl(), 'confirmed').getSignatureStatuses([signature], {
+    searchTransactionHistory: true,
+  });
+  const status = response.value[0];
+  if (!status) return 'unknown';
+  if (status.err) return 'failed';
+  if (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized') {
+    return 'confirmed';
   }
-  throw lastErr instanceof Error ? lastErr : new Error('escrow settle failed');
+  return 'pending';
 }

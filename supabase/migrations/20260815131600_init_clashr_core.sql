@@ -65,9 +65,20 @@ CREATE TABLE IF NOT EXISTS "matches" (
     "gross" INTEGER NOT NULL DEFAULT 0,
     "platform_fee" INTEGER NOT NULL DEFAULT 0,
     "settled" BOOLEAN NOT NULL DEFAULT false,
+    "escrow_status" TEXT NOT NULL DEFAULT 'not_required',
+    "escrow_party_id" TEXT,
+    "escrow_winner_address" TEXT,
+    "escrow_house" BOOLEAN NOT NULL DEFAULT false,
+    "escrow_signature" TEXT,
+    "escrow_attempts" INTEGER NOT NULL DEFAULT 0,
+    "escrow_error" TEXT,
+    "escrow_submitted_at" TIMESTAMP(3),
+    "escrow_settled_at" TIMESTAMP(3),
     "started_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "finished_at" TIMESTAMP(3),
-    CONSTRAINT "matches_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "matches_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "matches_escrow_status_check"
+      CHECK ("escrow_status" IN ('not_required', 'pending', 'submitted', 'confirmed', 'failed'))
 );
 
 CREATE TABLE IF NOT EXISTS "match_participants" (
@@ -157,6 +168,7 @@ CREATE INDEX IF NOT EXISTS "ledger_entries_user_id_created_at_idx" ON "ledger_en
 CREATE INDEX IF NOT EXISTS "ledger_entries_match_id_idx" ON "ledger_entries"("match_id");
 CREATE INDEX IF NOT EXISTS "matches_game_slug_started_at_idx" ON "matches"("game_slug", "started_at");
 CREATE INDEX IF NOT EXISTS "matches_winner_id_idx" ON "matches"("winner_id");
+CREATE INDEX IF NOT EXISTS "matches_escrow_status_idx" ON "matches"("escrow_status");
 CREATE INDEX IF NOT EXISTS "match_participants_user_id_idx" ON "match_participants"("user_id");
 CREATE INDEX IF NOT EXISTS "replay_events_match_id_t_idx" ON "replay_events"("match_id", "t");
 CREATE INDEX IF NOT EXISTS "match_moments_match_id_idx" ON "match_moments"("match_id");

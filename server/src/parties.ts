@@ -1,13 +1,25 @@
 import { prisma } from './db.ts';
 import { isGameSlug } from '../../shared/games.ts';
 import type { Party } from '../../src/types/party.ts';
-import { fetchEscrowState } from './escrowOracle.ts';
+import { fetchEscrowState, oraclePubkey, treasury, type EscrowState } from './escrowOracle.ts';
 
 function code(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let id = '';
   for (let i = 0; i < 6; i++) id += alphabet[Math.floor(Math.random() * alphabet.length)];
   return id;
+}
+
+function assertEscrowIdentity(
+  party: { hostId: string; escrowPda?: string | null },
+  escrow: EscrowState | null,
+): asserts escrow is EscrowState {
+  const expectedOracle = oraclePubkey();
+  if (!expectedOracle) throw new Error('house oracle is unavailable');
+  if (!escrow || escrow.pda !== party.escrowPda) throw new Error('escrow account not verified');
+  if (escrow.authority !== party.hostId) throw new Error('escrow host mismatch');
+  if (escrow.treasury !== treasury().toBase58()) throw new Error('escrow treasury mismatch');
+  if (escrow.oracle !== expectedOracle) throw new Error('escrow oracle mismatch');
 }
 
 function toParty(row: {
@@ -230,7 +242,7 @@ export async function recordDeposit(partyId: string, userId: string): Promise<Pa
   if (!room.members.some((m) => m.userId === userId)) throw new Error('not in party');
   if (room.entryLamports != null && room.entryLamports > 0n) {
     const escrow = await fetchEscrowState(id);
-    if (!escrow || escrow.pda !== room.escrowPda) throw new Error('escrow account not verified');
+    assertEscrowIdentity(room, escrow);
     if (escrow.entryLamports !== Number(room.entryLamports)) throw new Error('escrow stake mismatch');
     if (escrow.status > 1) throw new Error('escrow is closed');
     if (!escrow.players.includes(userId)) throw new Error('deposit not confirmed on-chain');
@@ -266,7 +278,7 @@ export async function startParty(partyId: string, hostId: string, gamePath: stri
 export async function assertEscrowReady(party: Party): Promise<void> {
   if (!party.entryLamports || party.entryLamports <= 0) return;
   const escrow = await fetchEscrowState(party.id);
-  if (!escrow || escrow.pda !== party.escrowPda) throw new Error('escrow account not verified');
+  assertEscrowIdentity(party, escrow);
   if (escrow.entryLamports !== party.entryLamports) throw new Error('escrow stake mismatch');
   if (escrow.status !== 1) throw new Error('escrow must be locked before the match starts');
   const memberIds = party.members.map((member) => member.id);

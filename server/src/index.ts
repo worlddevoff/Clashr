@@ -33,6 +33,7 @@ import {
 import { proxySolanaRpc } from './solanaProxy.ts';
 import { originAllowed } from './corsOrigin.ts';
 import { canonicalRedirectUrl } from '../../shared/site.ts';
+import { startEscrowPayoutWorker } from './escrowPayouts.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3001);
@@ -117,11 +118,13 @@ async function requireUser(req: express.Request, res: express.Response) {
 
 app.get('/api/health', (_req, res) => {
   const pots = potsStatus();
-  res.json({
-    ok: true,
+  const realMoneyReady = process.env.ENABLE_SOL_POTS !== '1' || pots.solPots;
+  res.status(realMoneyReady ? 200 : 503).json({
+    ok: realMoneyReady,
     game: 'clashr',
     disclaimer: CREDITS_DISCLAIMER,
     solPots: pots.solPots,
+    ...(realMoneyReady ? {} : { reason: pots.reason }),
   });
 });
 
@@ -486,6 +489,7 @@ wss.on('connection', (ws: WebSocket) => {
 void (async () => {
   await ensureHouse();
   const pots = await refreshPotsReady();
+  startEscrowPayoutWorker();
   setInterval(() => {
     void refreshPotsReady();
   }, 60_000);

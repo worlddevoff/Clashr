@@ -9,7 +9,7 @@ import { BombPartyEngine, type BombPartySeedPlayer } from '../../src/game/BombPa
 import { getBombMap } from '../../src/game/bombMaps.ts';
 import { settleMatch, getBalance, chargeMatchEntries, settleBombMatch } from './ledger.ts';
 import { assertEscrowReady, getParty } from './parties.ts';
-import { houseCanSettle, settleEscrowAsHouse } from './escrowOracle.ts';
+import { queueEscrowPayout } from './escrowPayouts.ts';
 import { TOWER_BOT_AVATARS, TOWER_BOT_COLORS, TOWER_BOT_NAMES } from '../../shared/tower/bots.ts';
 
 type Sock = WebSocket & { userId?: string; username?: string; avatar?: string; color?: string };
@@ -196,17 +196,14 @@ function tickTower(live: Extract<LiveMatch, { kind: 'tower' }>): void {
     const result = live.engine.result;
     void settleMatch(result)
       .then(async () => {
-        if (live.escrowPda && live.partyId && houseCanSettle()) {
+        if (live.escrowPda && live.partyId) {
           const winner = result.participants.find((p) => p.id === result.winnerId);
-          try {
-            await settleEscrowAsHouse({
-              partyId: live.partyId,
-              winnerAddress: winner?.isBot ? null : result.winnerId,
-              house: !winner || winner.isBot,
-            });
-          } catch (err) {
-            console.error('escrow settle failed', err);
-          }
+          await queueEscrowPayout({
+            matchId: live.id,
+            partyId: live.partyId,
+            winnerAddress: winner?.isBot ? null : result.winnerId,
+            house: !winner || winner.isBot,
+          });
         }
         const msg: ServerMsg = { type: 'match_end', result };
         for (const sock of live.sockets.values()) send(sock, msg);
@@ -269,16 +266,13 @@ function tickBomb(live: Extract<LiveMatch, { kind: 'bomb' }>): void {
           isBot: !p.isHuman,
         })),
       });
-      if (live.escrowPda && live.partyId && houseCanSettle()) {
-        try {
-          await settleEscrowAsHouse({
-            partyId: live.partyId,
-            winnerAddress: result.winnerIsBot ? null : winnerId,
-            house: result.winnerIsBot || !winnerId,
-          });
-        } catch (err) {
-          console.error('escrow settle failed', err);
-        }
+      if (live.escrowPda && live.partyId) {
+        await queueEscrowPayout({
+          matchId: live.id,
+          partyId: live.partyId,
+          winnerAddress: result.winnerIsBot ? null : winnerId,
+          house: result.winnerIsBot || !winnerId,
+        });
       }
       const msg: ServerMsg = { type: 'bomb_end', result };
       for (const sock of live.sockets.values()) send(sock, msg);

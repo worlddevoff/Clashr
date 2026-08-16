@@ -1,8 +1,13 @@
 # Arcade match escrow
 
-Per-match SOL pot: each human deposits entry into a PDA. When the match ends the **treasury/oracle** settles — winner receives pot − 5% fee, or the treasury keeps the pot if a bot wins. The host cannot settle.
+Per-match SOL pot: each human deposits entry into a PDA. When the match ends the **house oracle** settles — winner receives pot − 5% fee, or the treasury keeps the pot if a bot wins. The host cannot settle.
 
-`HOUSE_SECRET_KEY` on the Node server must be the **treasury** keypair (`VITE_TREASURY_WALLET` / `TREASURY_WALLET`). After changing settle, **redeploy** this program before enabling `VITE_ENABLE_SOL_POTS`.
+Two wallets:
+
+- **Treasury** (`TREASURY_WALLET` / `VITE_TREASURY_WALLET`) — public receive address for the 5% fee and bot-win pots. You keep this key offline.
+- **Oracle** (`HOUSE_SECRET_KEY`) — hot signer on the Node server. Pays transaction fees and receives PDA rent on close. Its pubkey is recorded on the match account at create.
+
+The SPA turns pots on from `GET /api/config` once the oracle key is present and this program is deployed.
 
 ## Deploy
 
@@ -23,4 +28,4 @@ Set in the app `.env`:
 VITE_ESCROW_PROGRAM_ID=96kU3yLXf5agsoBGzTCQvtYxqAfm4vQV1XdZYKh95512
 ```
 
-Treasury must match `VITE_TREASURY_WALLET` (pack purchases use the same address).
+Account layout magic is `ARCESC02`. Redeploy this program before creating new pots.

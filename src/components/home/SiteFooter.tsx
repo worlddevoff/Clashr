@@ -23,7 +23,9 @@ const columns = [
     title: 'Trust',
     links: [
       { label: 'How escrow works', to: '/#how-it-works' },
-      { label: 'Fees', to: '/#how-it-works' },
+      { label: 'Terms', to: '/terms' },
+      { label: 'Privacy', to: '/privacy' },
+      { label: 'Responsible play', to: '/responsible-play' },
     ],
   },
 ];
@@ -63,8 +65,8 @@ export function SiteFooter() {
         <div className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6">
           <p className="text-xs text-muted">© {new Date().getFullYear()} {SITE_NAME}. All rights reserved.</p>
           <p className="max-w-xl text-xs leading-relaxed text-muted">
-            18+ only. Skill-based wagering is restricted in some jurisdictions — check your local laws before
-            playing. Play with amounts you can afford to lose.
+            18+ only. Skill-based wagering is restricted in some jurisdictions. Check local laws
+            before staking SOL. Play with amounts you can afford to lose.
           </p>
         </div>
       </div>

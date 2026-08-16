@@ -22,6 +22,7 @@ type LiveMatch =
   | {
       kind: 'tower';
       id: string;
+      seed: number;
       engine: TowerEngine;
       sockets: Map<string, Sock>;
       timer: ReturnType<typeof setInterval>;
@@ -31,6 +32,7 @@ type LiveMatch =
   | {
       kind: 'bomb';
       id: string;
+      seed: number;
       engine: BombPartyEngine;
       sockets: Map<string, Sock>;
       timer: ReturnType<typeof setInterval>;
@@ -43,10 +45,12 @@ type LiveMatch =
 const BOMB_ARENA = { width: 900, height: 620 };
 const BOMB_HZ = 20;
 const FEE_BPS = 500;
+const RECONNECT_GRACE_MS = 15_000;
 
 const queue: Queued[] = [];
 const matches = new Map<string, LiveMatch>();
 const parties = new Map<string, { host: string; members: Sock[]; game?: 'tower' | 'bomb-party' }>();
+const reconnecting = new Map<string, { matchId: string; timer: ReturnType<typeof setTimeout> }>();
 
 function send(sock: Sock, msg: ServerMsg): void {
   if (sock.readyState === sock.OPEN) sock.send(JSON.stringify(msg));
@@ -121,6 +125,7 @@ async function startMatch(
   const live: LiveMatch = {
     kind: 'tower',
     id,
+    seed,
     engine,
     sockets,
     timer: setInterval(() => tickTower(live as Extract<LiveMatch, { kind: 'tower' }>), 1000 / TICK_HZ),
@@ -159,6 +164,7 @@ async function startBombMatch(
   const live: Extract<LiveMatch, { kind: 'bomb' }> = {
     kind: 'bomb',
     id,
+    seed: 0,
     engine,
     sockets,
     timer: setInterval(() => tickBomb(live), 1000 / BOMB_HZ),
@@ -419,11 +425,85 @@ export function detachSocket(sock: Sock): void {
   const i = queue.findIndex((q) => q.sock === sock);
   if (i >= 0) queue.splice(i, 1);
   if (!sock.userId) return;
-  for (const live of matches.values()) {
-    if (!live.sockets.has(sock.userId)) continue;
-    live.engine.forfeit(sock.userId);
-    live.sockets.delete(sock.userId);
+  const userId = sock.userId;
+  for (const [code, p] of parties) {
+    const next = p.members.filter((m) => m !== sock);
+    if (next.length === p.members.length) continue;
+    p.members = next;
+    if (!next.length) parties.delete(code);
+    else {
+      for (const m of next) send(m, { type: 'party', code, members: partyMembers(code) });
+    }
   }
+  for (const live of matches.values()) {
+    if (!live.sockets.has(userId)) continue;
+    if (live.sockets.get(userId) !== sock) continue;
+    live.sockets.delete(userId);
+    const existing = reconnecting.get(userId);
+    if (existing) clearTimeout(existing.timer);
+    const timer = setTimeout(() => {
+      reconnecting.delete(userId);
+      const still = matches.get(live.id);
+      if (!still || still.sockets.has(userId)) return;
+      still.engine.forfeit(userId);
+    }, RECONNECT_GRACE_MS);
+    reconnecting.set(userId, { matchId: live.id, timer });
+  }
+}
+
+function resumeMatch(sock: Sock, userId: string): boolean {
+  const pending = reconnecting.get(userId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    reconnecting.delete(userId);
+    const live = matches.get(pending.matchId);
+    if (live) {
+      live.sockets.set(userId, sock);
+      send(sock, {
+        type: 'match_start',
+        matchId: live.id,
+        seed: live.seed,
+        you: userId,
+        game: live.kind === 'bomb' ? 'bomb-party' : 'tower',
+      });
+      if (live.kind === 'tower') {
+        send(sock, { type: 'snapshot', matchId: live.id, snap: live.engine.snapshot() });
+      } else {
+        send(sock, { type: 'bomb_snapshot', matchId: live.id, snap: live.engine.snapshot() });
+      }
+      return true;
+    }
+  }
+  for (const live of matches.values()) {
+    const inTower = live.kind === 'tower' && live.engine.snapshot().players.some((p) => p.id === userId && p.alive);
+    const inBomb = live.kind === 'bomb' && live.players.some((p) => p.id === userId && p.isHuman);
+    if (!inTower && !inBomb) continue;
+    if (live.sockets.has(userId) && live.sockets.get(userId) !== sock) continue;
+    live.sockets.set(userId, sock);
+    send(sock, {
+      type: 'match_start',
+      matchId: live.id,
+      seed: live.seed,
+      you: userId,
+      game: live.kind === 'bomb' ? 'bomb-party' : 'tower',
+    });
+    if (live.kind === 'tower') send(sock, { type: 'snapshot', matchId: live.id, snap: live.engine.snapshot() });
+    else send(sock, { type: 'bomb_snapshot', matchId: live.id, snap: live.engine.snapshot() });
+    return true;
+  }
+  return false;
+}
+
+export function attachUser(
+  sock: Sock,
+  user: { id: string; username: string; avatar: string; color: string },
+): void {
+  sock.userId = user.id;
+  sock.username = user.username;
+  sock.avatar = user.avatar;
+  sock.color = user.color;
+  send(sock, { type: 'hello', ok: true });
+  resumeMatch(sock, user.id);
 }
 
 function partyMembers(code: string) {
@@ -455,13 +535,3 @@ function flushQueue(): void {
 
 setInterval(flushQueue, 400);
 
-export function attachUser(
-  sock: Sock,
-  user: { id: string; username: string; avatar: string; color: string },
-): void {
-  sock.userId = user.id;
-  sock.username = user.username;
-  sock.avatar = user.avatar;
-  sock.color = user.color;
-  send(sock, { type: 'hello', ok: true });
-}

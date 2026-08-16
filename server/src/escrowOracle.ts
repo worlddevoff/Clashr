@@ -9,7 +9,12 @@ import bs58 from 'bs58';
 
 const SEED = Buffer.from('arcade-match');
 const DEFAULT_PROGRAM = '96kU3yLXf5agsoBGzTCQvtYxqAfm4vQV1XdZYKh95512';
-const DEFAULT_TREASURY = 'FhBqhrNJ4VNEG9JANerxgKt1L8hYhugXCgXrefqSBw3j';
+/** 5% fee / bot-win destination. Public receive address only — never the house signer. */
+const DEFAULT_TREASURY = '259nG2nNP8GjCKRYqrcpsEJ14qfrra5yabjpU6axs7We';
+
+let potsReady = false;
+let potsReason = 'starting';
+let probing: Promise<boolean> | null = null;
 
 export function houseKeypair(): Keypair | null {
   const raw = process.env.HOUSE_SECRET_KEY?.trim();
@@ -26,32 +31,85 @@ export function houseKeypair(): Keypair | null {
 }
 
 export function houseCanSettle(): boolean {
-  return !!houseKeypair();
+  return potsReady;
 }
 
-function partyIdSeed(partyId: string): Buffer {
+export function potsStatus(): { solPots: boolean; reason: string } {
+  return { solPots: potsReady, reason: potsReason };
+}
+
+export function partyIdSeed(partyId: string): Buffer {
   const buf = Buffer.alloc(32);
   const s = partyId.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
   buf.write(s, 0, s.length, 'utf8');
   return buf;
 }
 
-function programId(): PublicKey {
+export function programId(): PublicKey {
   return new PublicKey(process.env.ESCROW_PROGRAM_ID || process.env.VITE_ESCROW_PROGRAM_ID || DEFAULT_PROGRAM);
 }
 
-function treasury(): PublicKey {
+export function treasury(): PublicKey {
   return new PublicKey(process.env.TREASURY_WALLET || process.env.VITE_TREASURY_WALLET || DEFAULT_TREASURY);
 }
 
-function rpcUrl(): string {
+/** Pubkey of HOUSE_SECRET_KEY — signs settle. Not the fee wallet. */
+export function oraclePubkey(): string | null {
+  return houseKeypair()?.publicKey.toBase58() ?? null;
+}
+
+export function clusterName(): string {
+  return process.env.VITE_SOLANA_CLUSTER?.trim() || process.env.SOLANA_CLUSTER?.trim() || 'devnet';
+}
+
+export function rpcUrl(): string {
   return (
     process.env.SOLANA_RPC ||
     process.env.VITE_SOLANA_RPC ||
-    (process.env.VITE_SOLANA_CLUSTER === 'devnet'
+    (clusterName() === 'devnet'
       ? 'https://api.devnet.solana.com'
-      : 'https://solana-rpc.publicnode.com')
+      : clusterName() === 'testnet'
+        ? 'https://api.testnet.solana.com'
+        : 'https://solana-rpc.publicnode.com')
   );
+}
+
+export async function refreshPotsReady(): Promise<boolean> {
+  if (probing) return probing;
+  probing = (async () => {
+    const oracle = houseKeypair();
+    if (!oracle) {
+      potsReady = false;
+      potsReason = 'no_house_key';
+      return false;
+    }
+    try {
+      const info = await new Connection(rpcUrl(), 'confirmed').getAccountInfo(programId());
+      if (!info?.executable) {
+        potsReady = false;
+        potsReason = 'program_missing';
+        return false;
+      }
+    } catch (err) {
+      potsReady = false;
+      potsReason = 'rpc_error';
+      console.error('escrow program probe failed', err instanceof Error ? err.message : err);
+      return false;
+    }
+    potsReady = true;
+    potsReason = 'ok';
+    return true;
+  })();
+  try {
+    return await probing;
+  } finally {
+    probing = null;
+  }
+}
+
+function partyPda(partyId: string, program: PublicKey): PublicKey {
+  const [pda] = PublicKey.findProgramAddressSync([SEED, partyIdSeed(partyId)], program);
+  return pda;
 }
 
 /** Pays the locked pot from the house/oracle key after an authoritative match_end. */
@@ -61,9 +119,9 @@ export async function settleEscrowAsHouse(opts: {
   house: boolean;
 }): Promise<string | null> {
   const oracle = houseKeypair();
-  if (!oracle) return null;
+  if (!oracle || !potsReady) return null;
   const program = programId();
-  const [pda] = PublicKey.findProgramAddressSync([SEED, partyIdSeed(opts.partyId)], program);
+  const pda = partyPda(opts.partyId, program);
   const treasuryPk = treasury();
   const house = opts.house || !opts.winnerAddress;
   let winner: PublicKey;
@@ -75,7 +133,7 @@ export async function settleEscrowAsHouse(opts: {
   const data = Buffer.alloc(1 + 32 + 1);
   data[0] = 4;
   winner.toBuffer().copy(data, 1);
-  data[33] = house ? 1 : 0;
+  data[33] = house || winner.equals(treasuryPk) ? 1 : 0;
   const ix = new TransactionInstruction({
     programId: program,
     keys: [
@@ -87,14 +145,23 @@ export async function settleEscrowAsHouse(opts: {
     data,
   });
   const connection = new Connection(rpcUrl(), 'confirmed');
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-  const tx = new Transaction({
-    feePayer: oracle.publicKey,
-    blockhash,
-    lastValidBlockHeight,
-  }).add(ix);
-  tx.sign(oracle);
-  const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
-  await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
-  return sig;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+      const tx = new Transaction({
+        feePayer: oracle.publicKey,
+        blockhash,
+        lastValidBlockHeight,
+      }).add(ix);
+      tx.sign(oracle);
+      const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+      await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+      return sig;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('escrow settle failed');
 }

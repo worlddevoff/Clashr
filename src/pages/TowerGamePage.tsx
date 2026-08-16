@@ -13,7 +13,7 @@ import { playSfx, unlockAudio } from '../lib/audio';
 import { CREDITS_DISCLAIMER } from '../../shared/games';
 import { loadPartyRoster } from '../lib/party';
 import { computeEscrowPool } from '../lib/escrow';
-import { solPotsEnabled } from '../lib/solPots';
+import { useSolPots } from '../contexts/SolPotsContext';
 import type { PartyGameRoster } from '../types/party';
 
 const LOOK_SENSITIVITY = 0.0028;
@@ -24,13 +24,10 @@ const CAM_DIST_MIN = 5.5;
 const CAM_DIST_MAX = 14;
 const CAM_DIST_DEFAULT = 8.2;
 
-function makeBots(human: TowerFighter): TowerFighter[] {
-  return fillWithBots([human]);
-}
-
-function fillWithBots(humans: TowerFighter[]): TowerFighter[] {
+function fillWithBots(humans: TowerFighter[], capacity: number): TowerFighter[] {
+  const size = Math.max(2, Math.min(10, Math.round(capacity) || 10));
   const list = [...humans];
-  for (let i = 0; list.length < 10; i++) {
+  for (let i = 0; list.length < size; i++) {
     list.push({
       id: `bot-${i}-${humans.length}`,
       username: `Bot ${TOWER_BOT_NAMES[i % TOWER_BOT_NAMES.length]}`,
@@ -39,7 +36,7 @@ function fillWithBots(humans: TowerFighter[]): TowerFighter[] {
       isBot: true,
     });
   }
-  return list;
+  return list.slice(0, size);
 }
 
 export function TowerGamePage() {
@@ -49,6 +46,7 @@ export function TowerGamePage() {
   const practice = params.get('practice') === '1';
   const partyId = params.get('party')?.toUpperCase() ?? null;
   const partyRoster = useMemo(() => (partyId ? loadPartyRoster(partyId) : null), [partyId]);
+  const practiceCap = Math.max(2, Math.min(10, Number(params.get('cap')) || 10));
   const [nonce, setNonce] = useState(0);
   const practicePlayer = useMemo(() => {
     if (!user) return null;
@@ -80,8 +78,9 @@ export function TowerGamePage() {
 
   return (
     <TowerMatch
-      key={`${practice}-${partyId ?? 'solo'}-${nonce}`}
+      key={`${practice}-${partyId ?? 'solo'}-${practiceCap}-${nonce}`}
       practice={practice}
+      practiceCap={practiceCap}
       partyRoster={partyRoster?.gameSlug === 'tower' ? partyRoster : null}
       userId={practicePlayer.id}
       username={practicePlayer.username}
@@ -95,6 +94,7 @@ export function TowerGamePage() {
 
 function TowerMatch({
   practice,
+  practiceCap,
   partyRoster,
   userId,
   username,
@@ -104,6 +104,7 @@ function TowerMatch({
   onHome,
 }: {
   practice: boolean;
+  practiceCap: number;
   partyRoster: PartyGameRoster | null;
   userId: string;
   username: string;
@@ -112,9 +113,10 @@ function TowerMatch({
   onAgain: () => void;
   onHome: () => void;
 }) {
+  const potsOn = useSolPots();
   const fighters = useMemo(
-    () => makeBots({ id: userId, username, avatar, color, isBot: false }),
-    [userId, username, avatar, color],
+    () => fillWithBots([{ id: userId, username, avatar, color, isBot: false }], practiceCap),
+    [userId, username, avatar, color, practiceCap],
   );
   const partyId = partyRoster?.partyId ?? null;
   const isPartyHost = !!partyRoster && partyRoster.hostId === userId;
@@ -376,7 +378,7 @@ function TowerMatch({
 
   if (result) {
     const solPrize =
-      solPotsEnabled() && partyRoster?.escrowPda && partyRoster.entryLamports
+      potsOn && partyRoster?.escrowPda && partyRoster.entryLamports
         ? computeEscrowPool(partyRoster.members.length, partyRoster.entryLamports).prizePool
         : null;
     return (

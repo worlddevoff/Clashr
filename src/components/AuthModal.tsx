@@ -163,7 +163,7 @@ export function AuthModal({ open, onClose }: Props) {
                   </p>
                 )}
                 <p className="text-center text-[11px] uppercase tracking-widest text-white/25">
-                  Phantom &amp; other Solana wallets · Sign message to prove ownership · No demo accounts
+                  Phantom &amp; other Solana wallets · Sign message to prove ownership
                 </p>
               </div>
             )}

@@ -195,7 +195,14 @@ export function useNetworkBombParty(opts: {
     let started = false;
     const conn = connectTowerSocket((msg) => {
       if (msg.type === 'error') setError(msg.message);
-      if (msg.type === 'hello') setStatus('party');
+      if (msg.type === 'hello') {
+        if (matchRef.current) {
+          setStatus('live');
+          return;
+        }
+        conn.send({ type: 'party_join', code: partyId, asHost: isHost, game: 'bomb-party' });
+        setStatus('Joining party…');
+      }
       if (msg.type === 'party' && isHost && !started) {
         if (msg.members.length >= Math.max(expectedPlayers, 1)) {
           started = true;
@@ -213,8 +220,6 @@ export function useNetworkBombParty(opts: {
       }
     });
     sendRef.current = conn.send;
-    conn.send({ type: 'party_join', code: partyId, asHost: isHost, game: 'bomb-party' });
-    setStatus('Joining party…');
     const map: Record<string, 'up' | 'down' | 'left' | 'right'> = {
       ArrowUp: 'up',
       KeyW: 'up',

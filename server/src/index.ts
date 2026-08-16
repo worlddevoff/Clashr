@@ -21,7 +21,14 @@ import {
 } from './parties.ts';
 import { CREDITS_DISCLAIMER, TOWER_STARTING_CREDITS } from '../../shared/games.ts';
 import { simulatePrizePool } from '../../shared/tower/prize.ts';
-import { houseCanSettle } from './escrowOracle.ts';
+import {
+  clusterName,
+  oraclePubkey,
+  potsStatus,
+  programId,
+  refreshPotsReady,
+  treasury,
+} from './escrowOracle.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3001);
@@ -96,12 +103,24 @@ async function requireUser(req: express.Request, res: express.Response) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, game: 'clashr', disclaimer: CREDITS_DISCLAIMER });
+  const pots = potsStatus();
+  res.json({
+    ok: true,
+    game: 'clashr',
+    disclaimer: CREDITS_DISCLAIMER,
+    solPots: pots.solPots,
+  });
 });
 
 app.get('/api/config', (_req, res) => {
+  const pots = potsStatus();
   res.json({
-    solPots: houseCanSettle(),
+    solPots: pots.solPots,
+    reason: pots.reason,
+    cluster: clusterName(),
+    treasury: treasury().toBase58(),
+    oracle: oraclePubkey() ?? '',
+    programId: programId().toBase58(),
     disclaimer: CREDITS_DISCLAIMER,
   });
 });
@@ -387,8 +406,13 @@ wss.on('connection', async (ws: WebSocket, req) => {
 
 void (async () => {
   await ensureHouse();
+  const pots = await refreshPotsReady();
+  setInterval(() => {
+    void refreshPotsReady();
+  }, 60_000);
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`CLASHR server on :${PORT}`);
     console.log(CREDITS_DISCLAIMER);
+    console.log(`SOL pots ${pots ? 'ON' : 'off'} (${potsStatus().reason}) cluster ${clusterName()}`);
   });
 })();

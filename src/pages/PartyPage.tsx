@@ -57,7 +57,7 @@ import { ENTRY_FEE, PARTY_CAPACITIES, clampEntry } from '../types/party';
 import { cn } from '../utils/cn';
 import { formatSol } from '../utils/format';
 import { StakePicker } from '../components/game/StakePicker';
-import { solPotsEnabled } from '../lib/solPots';
+import { useSolPots } from '../contexts/SolPotsContext';
 
 export function PartyPage() {
   const { partyId: rawId } = useParams();
@@ -65,7 +65,7 @@ export function PartyPage() {
   const partyId = (rawId ?? '').toUpperCase();
   const navigate = useNavigate();
   const { user, isAuthed } = useAuth();
-  const potsOn = solPotsEnabled();
+  const potsOn = useSolPots();
 
   const capParam = Number(params.get('cap'));
   const savedLobby = loadPartyLobby(partyId);

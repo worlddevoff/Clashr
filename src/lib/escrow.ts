@@ -7,7 +7,8 @@ import {
 } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { getSolanaProvider } from './wallet';
-import { getTreasuryAddress } from './solanaConfig';
+import { getOracleAddress, getTreasuryAddress } from './solanaConfig';
+import { getSolPotsConfig, refreshSolPots } from './solPots';
 import { friendlyRpcError, rpc, sendSignedTransaction } from './solanaRpc';
 
 /** Default program id from `solana/arcade-escrow/keys`. */
@@ -61,7 +62,8 @@ export function saveLastStakeSol(sol: number): void {
 }
 
 const SEED = Buffer.from('arcade-match');
-const MATCH_SIZE = 762;
+const MATCH_SIZE = 794;
+const MAGIC = 'ARCESC02';
 
 export function getEscrowProgramId(): PublicKey {
   const id = import.meta.env.VITE_ESCROW_PROGRAM_ID?.trim() || DEFAULT_ESCROW_PROGRAM_ID;
@@ -98,6 +100,7 @@ export interface EscrowAccount {
   pda: string;
   authority: string;
   treasury: string;
+  oracle: string;
   entryLamports: number;
   feeBps: number;
   capacity: number;
@@ -108,24 +111,38 @@ export interface EscrowAccount {
 
 function decodeEscrow(pda: string, raw: Buffer): EscrowAccount | null {
   if (raw.length < MATCH_SIZE) return null;
-  if (raw.subarray(0, 8).toString() !== 'ARCESC01') return null;
-  const count = raw[115];
+  if (raw.subarray(0, 8).toString() !== MAGIC) return null;
+  const count = raw[147];
   const players: string[] = [];
   for (let i = 0; i < count; i++) {
-    const start = 122 + i * 32;
+    const start = 154 + i * 32;
     players.push(new PublicKey(raw.subarray(start, start + 32)).toBase58());
   }
   return {
     pda,
     authority: new PublicKey(raw.subarray(8, 40)).toBase58(),
     treasury: new PublicKey(raw.subarray(40, 72)).toBase58(),
-    entryLamports: Number(raw.readBigUInt64LE(104)),
-    feeBps: raw.readUInt16LE(112),
-    capacity: raw[114],
+    oracle: new PublicKey(raw.subarray(72, 104)).toBase58(),
+    entryLamports: Number(raw.readBigUInt64LE(136)),
+    feeBps: raw.readUInt16LE(144),
+    capacity: raw[146],
     playerCount: count,
-    status: raw[116],
+    status: raw[148],
     players,
   };
+}
+
+async function feeAndOracle(): Promise<{ treasury: PublicKey; oracle: PublicKey }> {
+  let cfg = getSolPotsConfig();
+  if (!cfg.oracle || !cfg.treasury) {
+    cfg = await refreshSolPots();
+  }
+  const treasuryStr = cfg.treasury || getTreasuryAddress();
+  const oracleStr = cfg.oracle || getOracleAddress();
+  if (!oracleStr) {
+    throw new Error('Match server has not published the house oracle yet.');
+  }
+  return { treasury: new PublicKey(treasuryStr), oracle: new PublicKey(oracleStr) };
 }
 
 export async function fetchEscrow(partyId: string): Promise<EscrowAccount | null> {
@@ -201,12 +218,13 @@ export async function createAndJoinEscrow(
       return { pda: pda.toBase58(), signature: '' };
     }
 
-    const treasury = new PublicKey(getTreasuryAddress());
+    const { treasury, oracle } = await feeAndOracle();
     const tx = new Transaction({ feePayer: host, recentBlockhash: await latestBlockhash() }).add(
       ix(buildCreateData(partyId, capacity, entryLamports), [
         { pubkey: host, isSigner: true, isWritable: true },
         { pubkey: pda, isSigner: false, isWritable: true },
         { pubkey: treasury, isSigner: false, isWritable: false },
+        { pubkey: oracle, isSigner: false, isWritable: false },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ]),
       joinIx(host, pda),

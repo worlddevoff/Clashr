@@ -13,7 +13,7 @@ import {
 import { Button } from '../components/ui/Button';
 import { StakePicker } from '../components/game/StakePicker';
 import { LOBBY_ROOMS } from '../data/demo';
-import { solPotsEnabled } from '../lib/solPots';
+import { useSolPots } from '../contexts/SolPotsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { createParty, parsePartyCode, subscribePublicParties } from '../lib/party';
 import {
@@ -58,7 +58,7 @@ export function PlayPage() {
     navigate(`/game/${room.id}?cap=${room.capacity}&entry=${room.entry}`);
   };
 
-  const potsOn = solPotsEnabled();
+  const potsOn = useSolPots();
 
   const createBombParty = (visibility: PartyVisibility, capacity = createCap) => {
     if (!user) {

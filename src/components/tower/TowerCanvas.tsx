@@ -111,24 +111,58 @@ function Players({
   snap,
   humanId,
   focusId,
+  showNames,
 }: {
   snap: TowerSnapshot;
   humanId: string;
   focusId: string;
+  showNames: boolean;
 }) {
+  const fromRef = useRef(snap);
+  const toRef = useRef(snap);
+  const t0 = useRef(performance.now());
+  const groups = useRef(new Map<string, Group>());
+
+  if (toRef.current.tick !== snap.tick) {
+    fromRef.current = toRef.current;
+    toRef.current = snap;
+    t0.current = performance.now();
+  }
+
+  useFrame(() => {
+    const span = 50;
+    const t = Math.min(1, (performance.now() - t0.current) / span);
+    const from = fromRef.current;
+    const to = toRef.current;
+    for (const p of to.players) {
+      const g = groups.current.get(p.id);
+      if (!g) continue;
+      const prev = from.players.find((x) => x.id === p.id) ?? p;
+      g.position.set(lerp(prev.x, p.x, t), lerp(prev.y, p.y, t), lerp(prev.z, p.z, t));
+      g.rotation.y = lerp(prev.yaw, p.yaw, t);
+    }
+  });
+
   return (
     <>
       {snap.players.map((p) => {
-        // Bodies keep falling after elimination and fade out on the way down.
         const fade = p.alive ? 1 : Math.max(0, 1 - p.deadFor / 2.2);
         if (fade <= 0.02) return null;
         return (
-          <group key={p.id} position={[p.x, p.y, p.z]} rotation={[0, p.yaw, 0]}>
+          <group
+            key={p.id}
+            ref={(node) => {
+              if (node) groups.current.set(p.id, node);
+              else groups.current.delete(p.id);
+            }}
+            position={[p.x, p.y, p.z]}
+            rotation={[0, p.yaw, 0]}
+          >
             <group scale={p.alive ? 1 : 0.6 + fade * 0.4}>
               <Bean color={p.color} anim={p.anim} />
             </group>
             {p.alive && p.id === humanId && <SelfMarker />}
-            {p.alive && (
+            {p.alive && showNames && (
               <Nameplate p={p} you={p.id === humanId} focused={p.id === focusId && p.id !== humanId} />
             )}
           </group>
@@ -363,6 +397,8 @@ export function TowerCanvas({
   yawRef,
   pitchRef,
   distRef,
+  frameloop = 'always',
+  showNames = true,
 }: {
   snap: TowerSnapshot;
   humanId: string;
@@ -370,6 +406,8 @@ export function TowerCanvas({
   yawRef: { current: number };
   pitchRef: { current: number };
   distRef: { current: number };
+  frameloop?: 'always' | 'demand' | 'never';
+  showNames?: boolean;
 }) {
   const blueprint = useMemo(() => generateTower(snap.seed), [snap.seed]);
   const moving = useMemo(() => new Map(snap.moving.map((m) => [m.id, m])), [snap.moving]);
@@ -379,6 +417,7 @@ export function TowerCanvas({
     <div className="h-full w-full">
       <Canvas
         shadows
+        frameloop={frameloop}
         camera={{ position: [0, 9, 12], fov: 50 }}
         dpr={[1, 1.5]}
         gl={{ antialias: true }}
@@ -396,7 +435,7 @@ export function TowerCanvas({
         {blueprint.platforms.map((p) => (
           <PlatformMesh key={p.id} p={p} moving={moving.get(p.id)} />
         ))}
-        <Players snap={snap} humanId={humanId} focusId={focus} />
+        <Players snap={snap} humanId={humanId} focusId={focus} showNames={showNames} />
         <FollowCam snap={snap} focusId={focus} yawRef={yawRef} pitchRef={pitchRef} distRef={distRef} />
         {snap.phase === 'final' && <CollapsePlane y={snap.collapseY} />}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -8, 0]}>

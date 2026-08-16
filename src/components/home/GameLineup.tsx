@@ -1,15 +1,65 @@
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { BellIcon, BombIcon, GrabIcon, PlayIcon, RocketIcon, BanknoteIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { FEATURED_GAMES } from '../../data/demo';
 import { Button } from '../ui/Button';
 import { playPath } from '../../../shared/games';
 import type { GameSlug } from '../../../shared/games';
+import { LineupBombPreview } from './LineupBombPreview';
+
+const LineupTowerPreview = lazy(() => import('./LineupTowerPreview'));
 
 const upcomingIcons: Record<string, typeof BanknoteIcon> = {
   'floor-is-cash': BanknoteIcon,
   'claw-chaos': GrabIcon,
   'rocket-run': RocketIcon,
 };
+
+function LazyTowerPreview({ className }: { className: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setReady(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '240px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref} className={className}>
+      {ready ? (
+        <Suspense fallback={<div className="h-full w-full bg-ink-850" />}>
+          <LineupTowerPreview />
+        </Suspense>
+      ) : (
+        <div className="h-full w-full bg-ink-850" />
+      )}
+    </div>
+  );
+}
+
+function LineupMedia({ slug, featured }: { slug: string; featured?: boolean }) {
+  const frame = featured ? 'h-56 w-full sm:h-72' : 'h-40 w-full';
+  if (slug === 'tower') return <LazyTowerPreview className={frame} />;
+  if (slug === 'bomb-party') {
+    return (
+      <div className={frame}>
+        <LineupBombPreview />
+      </div>
+    );
+  }
+  return <div className={`grid place-items-center bg-ink-850 ${frame}`} />;
+}
 
 export function GameLineup() {
   const navigate = useNavigate();
@@ -31,11 +81,7 @@ export function GameLineup() {
         <div className="mt-8 grid gap-5 lg:grid-cols-3">
           {feature && (
             <article className="group relative flex flex-col overflow-hidden rounded-xl border border-neon-cyan/25 bg-ink-900 lg:col-span-2">
-              {feature.image ? (
-                <img src={feature.image} alt={`${feature.name} gameplay`} className="h-56 w-full object-cover sm:h-72" />
-              ) : (
-                <div className="grid h-56 place-items-center bg-ink-850 text-6xl sm:h-72">{feature.emoji}</div>
-              )}
+              <LineupMedia slug={feature.slug} featured />
               <div className="flex flex-1 flex-col p-6">
                 <div className="flex items-center gap-3">
                   <h3 className="font-display text-2xl font-bold uppercase tracking-tight text-white">{feature.name}</h3>
@@ -61,11 +107,7 @@ export function GameLineup() {
 
           {second && (
             <article className="flex flex-col overflow-hidden rounded-xl border border-line bg-ink-900">
-              {second.image ? (
-                <img src={second.image} alt={`${second.name} gameplay`} className="h-40 w-full object-cover" />
-              ) : (
-                <div className="grid h-40 place-items-center bg-ink-850 text-5xl">{second.emoji}</div>
-              )}
+              <LineupMedia slug={second.slug} />
               <div className="flex flex-1 flex-col p-6">
                 <div className="flex items-center gap-3">
                   <h3 className="font-display text-xl font-bold uppercase tracking-tight text-white">{second.name}</h3>

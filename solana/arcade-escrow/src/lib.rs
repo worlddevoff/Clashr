@@ -3,11 +3,11 @@
 //! PDA seeds: `["arcade-match", party_id_32]`
 //!
 //! Instructions:
-//! 0 create  — host opens the match account
+//! 0 create  — host opens the match account (records treasury + oracle)
 //! 1 join    — player deposits `entry_lamports`
 //! 2 withdraw — player leaves while status is Open
 //! 3 lock    — host freezes deposits/withdrawals (match start)
-//! 4 settle  — treasury/oracle pays winner − fee, or treasury if a bot won
+//! 4 settle  — house oracle signs; 5% fee (or the whole pot if a bot won) goes to treasury
 
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
@@ -25,12 +25,13 @@ use solana_program::{
 
 entrypoint!(process_instruction);
 
-pub const MAGIC: &[u8; 8] = b"ARCESC01";
+pub const MAGIC: &[u8; 8] = b"ARCESC02";
 pub const SEED: &[u8] = b"arcade-match";
 pub const MAX_PLAYERS: usize = 20;
 pub const MATCH_SIZE: usize = 8  // magic
-    + 32 // authority
-    + 32 // treasury
+    + 32 // authority (host)
+    + 32 // treasury (fee recipient)
+    + 32 // oracle (server signer)
     + 32 // party_id
     + 8  // entry_lamports
     + 2  // fee_bps
@@ -48,14 +49,15 @@ pub const STATUS_SETTLED: u8 = 2;
 const OFF_MAGIC: usize = 0;
 const OFF_AUTH: usize = 8;
 const OFF_TREASURY: usize = 40;
-const OFF_PARTY: usize = 72;
-const OFF_ENTRY: usize = 104;
-const OFF_FEE: usize = 112;
-const OFF_CAP: usize = 114;
-const OFF_COUNT: usize = 115;
-const OFF_STATUS: usize = 116;
-const OFF_BUMP: usize = 117;
-const OFF_PLAYERS: usize = 122;
+const OFF_ORACLE: usize = 72;
+const OFF_PARTY: usize = 104;
+const OFF_ENTRY: usize = 136;
+const OFF_FEE: usize = 144;
+const OFF_CAP: usize = 146;
+const OFF_COUNT: usize = 147;
+const OFF_STATUS: usize = 148;
+const OFF_BUMP: usize = 149;
+const OFF_PLAYERS: usize = 154;
 
 pub fn process_instruction(
     program_id: &Pubkey,
@@ -94,6 +96,7 @@ fn create_match(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> P
     let host = next_account_info(acc)?;
     let pda = next_account_info(acc)?;
     let treasury = next_account_info(acc)?;
+    let oracle = next_account_info(acc)?;
     let system = next_account_info(acc)?;
 
     if !host.is_signer {
@@ -125,6 +128,7 @@ fn create_match(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> P
     buf[OFF_MAGIC..OFF_MAGIC + 8].copy_from_slice(MAGIC);
     buf[OFF_AUTH..OFF_AUTH + 32].copy_from_slice(host.key.as_ref());
     buf[OFF_TREASURY..OFF_TREASURY + 32].copy_from_slice(treasury.key.as_ref());
+    buf[OFF_ORACLE..OFF_ORACLE + 32].copy_from_slice(oracle.key.as_ref());
     buf[OFF_PARTY..OFF_PARTY + 32].copy_from_slice(&party_id);
     buf[OFF_ENTRY..OFF_ENTRY + 8].copy_from_slice(&entry.to_le_bytes());
     buf[OFF_FEE..OFF_FEE + 2].copy_from_slice(&fee_bps.to_le_bytes());
@@ -238,7 +242,7 @@ fn lock_match(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
 
 fn settle(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
     // winner [32] + house u8
-    // Settler MUST be the treasury (house/oracle). The match host cannot pay out.
+    // Settler MUST be the recorded house oracle. Fees go to the recorded treasury.
     if data.len() < 33 {
         return Err(ProgramError::InvalidInstructionData);
     }
@@ -263,8 +267,8 @@ fn settle(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Program
     let (entry, fee_bps, _cap, count, status, _bump, _party) = meta(pda)?;
     {
         let d = pda.try_borrow_data()?;
-        if oracle.key.as_ref() != &d[OFF_TREASURY..OFF_TREASURY + 32] {
-            msg!("settle requires the treasury oracle");
+        if oracle.key.as_ref() != &d[OFF_ORACLE..OFF_ORACLE + 32] {
+            msg!("settle requires the house oracle");
             return Err(ProgramError::IllegalOwner);
         }
         if &d[OFF_TREASURY..OFF_TREASURY + 32] != treasury.key.as_ref() {
@@ -381,13 +385,13 @@ fn debit_pda(pda: &AccountInfo, dest: &AccountInfo, amount: u64) -> ProgramResul
     Ok(())
 }
 
-fn close_pda(pda: &AccountInfo, host: &AccountInfo) -> ProgramResult {
+fn close_pda(pda: &AccountInfo, dest: &AccountInfo) -> ProgramResult {
     let leftover = pda.lamports();
     if leftover > 0 {
-    **pda.try_borrow_mut_lamports()? = 0;
-    **host.try_borrow_mut_lamports()? += leftover;
-  }
-  pda.realloc(0, false)?;
-  pda.assign(&system_program::id());
-  Ok(())
+        **pda.try_borrow_mut_lamports()? = 0;
+        **dest.try_borrow_mut_lamports()? += leftover;
+    }
+    pda.realloc(0, false)?;
+    pda.assign(&system_program::id());
+    Ok(())
 }

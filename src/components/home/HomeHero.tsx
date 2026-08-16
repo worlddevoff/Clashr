@@ -77,23 +77,6 @@ export function HomeHero({
               <TrophyIcon className="h-4 w-4 text-neon-cyan" /> Leaderboard
             </Button>
           </motion.div>
-
-          <motion.dl
-            variants={rise}
-            transition={{ duration: 0.32, ease: [0.23, 1, 0.32, 1] }}
-            className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-4 border-t border-line pt-6"
-          >
-            {[
-              { label: 'Games live', value: String(liveCount) },
-              { label: 'Open tables', value: String(openTables.length) },
-              { label: 'Avg. match', value: '~90s' },
-            ].map((stat) => (
-              <div key={stat.label}>
-                <dt className="eyebrow text-muted">{stat.label}</dt>
-                <dd className="mt-1 font-display text-xl font-semibold text-white">{stat.value}</dd>
-              </div>
-            ))}
-          </motion.dl>
         </motion.div>
 
         <motion.figure

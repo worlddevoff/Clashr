@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import type { PublicPartyListing } from '../../types/party';
 import { computeEscrowPool, ENTRY_LAMPORTS } from '../../lib/escrow';
-import { solPotsEnabled } from '../../lib/solPots';
+import { useSolPots } from '../../contexts/SolPotsContext';
 import { formatSol } from '../../utils/format';
 import { cn } from '../../utils/cn';
 
@@ -15,6 +15,7 @@ function GameIcon({ slug }: { slug?: string }) {
 
 export function OpenTables({ parties }: { parties: PublicPartyListing[] }) {
   const navigate = useNavigate();
+  const potsOn = useSolPots();
 
   return (
     <section id="open-tables" className="mx-auto w-full max-w-[1240px] px-5 py-16 lg:px-8 lg:py-20">
@@ -57,7 +58,7 @@ export function OpenTables({ parties }: { parties: PublicPartyListing[] }) {
               const seatsLeft = Math.max(0, match.capacity - match.memberCount);
               const filling = seatsLeft <= 1;
               const stake = match.entryLamports ?? ENTRY_LAMPORTS;
-              const pot = solPotsEnabled() ? computeEscrowPool(match.memberCount, stake).prizePool : 0;
+              const pot = potsOn ? computeEscrowPool(match.memberCount, stake).prizePool : 0;
               const game = match.gameSlug === 'tower' ? 'Tower' : 'Bomb Party';
               const href = `/party/${match.id}?game=${match.gameSlug}&cap=${match.capacity}&host=${encodeURIComponent(match.hostId)}&vis=public&stake=${stake}`;
               return (

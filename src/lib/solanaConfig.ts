@@ -1,9 +1,10 @@
 /** Solana network + treasury config — no web3.js (safe to import on every page). */
 
-export const TEST_TREASURY_WALLET = 'FhBqhrNJ4VNEG9JANerxgKt1L8hYhugXCgXrefqSBw3j';
+/** 5% fee / bot-win receive address (public). */
+export const TEST_TREASURY_WALLET = '259nG2nNP8GjCKRYqrcpsEJ14qfrra5yabjpU6axs7We';
 
 export function getSolanaCluster(): string {
-  return import.meta.env.VITE_SOLANA_CLUSTER?.trim() || 'mainnet-beta';
+  return import.meta.env.VITE_SOLANA_CLUSTER?.trim() || 'devnet';
 }
 
 export function getSolanaRpcUrl(): string {
@@ -28,6 +29,11 @@ export function getSolanaRpcFallbacks(): string[] {
 
 export function getTreasuryAddress(): string {
   return import.meta.env.VITE_TREASURY_WALLET?.trim() || TEST_TREASURY_WALLET;
+}
+
+/** House oracle that signs settle. Public only — secret stays on the server. */
+export function getOracleAddress(): string {
+  return import.meta.env.VITE_ORACLE_WALLET?.trim() || '';
 }
 
 export function explorerTxUrl(signature: string): string {

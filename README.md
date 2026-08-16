@@ -5,7 +5,7 @@ Crypto PvP front end — multiplayer **Bomb Party** plus **Tower**.
 ## Games
 
 - **Bomb Party** — party matches tick on the Node server. Solo vs bots stays local.
-- **CLASHR: TOWER** — vertical PvP climbing. Quick match and parties tick on the Node server. Virtual/demo credits only.
+- **CLASHR: TOWER** — vertical PvP climbing. Quick match and parties tick on the Node server. Demo credits always; SOL pots when the house oracle is live.
 
 ## Stack
 
@@ -42,10 +42,12 @@ One service runs the website, `/api`, and `/ws`. Do not put the match server on 
 3. Settings → Networking → Generate domain. Leave `VITE_API_ORIGIN` empty (same host).
 4. Redeploy after adding variables so the frontend rebuilds.
 
-`PORT` is set by Railway. Same-origin play does not need `CORS_ORIGINS`. Leave `VITE_ENABLE_SOL_POTS` unset until escrow is ready.
+`PORT` is set by Railway. Same-origin play does not need `CORS_ORIGINS`.
 
-- **SOL pots:** off unless `VITE_ENABLE_SOL_POTS=1` **and** `HOUSE_SECRET_KEY` is the treasury keypair. Redeploy `solana/arcade-escrow` so settle requires that oracle. Then smoke-test two wallets on **devnet** before mainnet.
+- **SOL pots** turn on when `HOUSE_SECRET_KEY` (house oracle signer) is set **and** `solana/arcade-escrow` is deployed on the cluster in `VITE_SOLANA_CLUSTER` (start on **devnet**). The SPA reads `/api/config` — do not set `VITE_ENABLE_SOL_POTS`. Set `TREASURY_WALLET` / `VITE_TREASURY_WALLET` to the public fee-receive address (5% + bot-win pots). That address does **not** need to match the oracle. Also set `ESCROW_PROGRAM_ID` / `VITE_ESCROW_PROGRAM_ID`.
+- Smoke-test two wallets on devnet (create party → both deposit → play → winner paid, host cannot settle) before mainnet.
 - Party create/join/start goes through session-authenticated `/api/parties`.
+- Terms, privacy, and an 18+ gate live at `/terms`, `/privacy`, `/responsible-play`.
 
 ## Supabase
 

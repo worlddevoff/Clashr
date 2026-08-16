@@ -82,14 +82,26 @@ export function useNetworkTower(opts: {
     if (!enabled) return;
     let started = false;
     const conn = connectTowerSocket((msg) => {
-      if (msg.type === 'hello') setStatus(partyId ? 'party' : 'online');
+      if (msg.type === 'hello') {
+        if (matchRef.current) {
+          setStatus('live');
+          return;
+        }
+        if (partyId) {
+          conn.send({ type: 'party_join', code: partyId, asHost: isHost, game: 'tower' });
+          setStatus('Joining party…');
+        } else {
+          conn.send({ type: 'queue' });
+          setStatus('online');
+        }
+      }
       if (msg.type === 'queued') setStatus(`queued ${msg.players}`);
       if (msg.type === 'error') setError(msg.message);
       if (msg.type === 'party' && partyId && isHost && !started) {
         const need = Math.max(expectedPlayers, 1);
         if (msg.members.length >= need) {
           started = true;
-          conn.send({ type: 'party_start', code: partyId });
+          conn.send({ type: 'party_start', code: partyId, game: 'tower' });
         }
       }
       if (msg.type === 'match_start') {
@@ -105,12 +117,10 @@ export function useNetworkTower(opts: {
     });
     sendRef.current = conn.send;
     if (partyId) {
-      conn.send({ type: 'party_join', code: partyId, asHost: isHost });
-      setStatus('Joining party…');
       const wait = window.setTimeout(() => {
-        if (!started && isHost) {
+        if (!started && isHost && !matchRef.current) {
           started = true;
-          conn.send({ type: 'party_start', code: partyId });
+          conn.send({ type: 'party_start', code: partyId, game: 'tower' });
         }
       }, 4000);
       return () => {
@@ -119,7 +129,6 @@ export function useNetworkTower(opts: {
         conn.close();
       };
     }
-    conn.send({ type: 'queue' });
     return () => conn.close();
   }, [enabled, partyId, isHost, expectedPlayers]);
 

@@ -26,6 +26,9 @@ export function friendlyRpcError(err: unknown): string {
   if (/403|Access forbidden|forbidden|failed to get balance/i.test(msg)) {
     return 'Could not reach Solana. Approve in Phantom if it opens — otherwise try again.';
   }
+  if (/blocked|malicious|unsafe|for your safety/i.test(msg)) {
+    return 'Phantom blocked the Railway URL. Open https://www.clashr.fun and tap stake there.';
+  }
   if (/User rejected|rejected|cancel/i.test(msg)) {
     return 'Transaction cancelled in wallet.';
   }

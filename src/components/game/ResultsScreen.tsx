@@ -5,6 +5,7 @@ import type { GameResult } from '../../types/domain';
 import { ShareCard } from './ShareCard';
 import { Button } from '../ui/Button';
 import { formatSol } from '../../utils/format';
+import { siteOrigin } from '../../../shared/site';
 
 interface Props {
   result: GameResult;
@@ -42,7 +43,7 @@ export function ResultsScreen({ result, youWon, onPlayAgain, onHome }: Props) {
 
   const shareMoment = () => {
     const text = buildShareText(result, youWon);
-    const url = typeof window !== 'undefined' ? `${window.location.origin}/` : '';
+    const url = `${siteOrigin()}/`;
     openXPost(text, url);
     setShared(true);
     window.setTimeout(() => setShared(false), 1800);

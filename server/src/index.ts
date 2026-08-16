@@ -31,6 +31,8 @@ import {
   treasury,
 } from './escrowOracle.ts';
 import { proxySolanaRpc } from './solanaProxy.ts';
+import { originAllowed } from './corsOrigin.ts';
+import { canonicalRedirectUrl } from '../../shared/site.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3001);
@@ -40,29 +42,21 @@ const app = express();
 app.disable('x-powered-by');
 if (process.env.TRUST_PROXY !== '0') app.set('trust proxy', 1);
 
-const corsOrigins = (process.env.CORS_ORIGINS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+app.use((req, res, next) => {
+  if (!IS_PROD) return next();
+  const p = req.path || '/';
+  if (p === '/' || p.startsWith('/api') || p === '/ws') return next();
+  const dest = canonicalRedirectUrl(req.hostname || String(req.headers.host || ''), req.originalUrl || '/');
+  if (dest) return res.redirect(302, dest);
+  next();
+});
 
-function originAllowed(origin: string | undefined, reqHost?: string): boolean {
-  if (!origin) return true;
-  if (corsOrigins.includes(origin)) return true;
-  try {
-    const host = new URL(origin).host;
-    if (reqHost && (host === reqHost || host === reqHost.split(',')[0]?.trim())) return true;
-  } catch {
-    return false;
-  }
-  return !IS_PROD && corsOrigins.length === 0;
-}
-
-app.use(
+app.use((req, res, next) => {
   cors({
-    origin: (origin, cb) => cb(null, originAllowed(origin)),
+    origin: (origin, cb) => cb(null, originAllowed(origin, req.hostname || req.headers.host)),
     credentials: true,
-  }),
-);
+  })(req, res, next);
+});
 app.use(express.json({ limit: '32kb' }));
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');

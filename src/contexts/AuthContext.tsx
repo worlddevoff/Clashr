@@ -83,12 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const onAccountChanged = (publicKey: unknown) => {
       const key = publicKey as SolanaPublicKey | null;
-      if (!key) {
-        setSessionToken(null);
-        persistSession(null);
-        setNeedsProfileSetup(false);
-        return;
-      }
+      if (!key) return;
       const next = normalizeAddress(key.toString());
       setUser((prev) => {
         if (prev && normalizeAddress(prev.id) !== next) {
@@ -101,9 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const onDisconnect = () => {
-      setSessionToken(null);
-      persistSession(null);
-      setNeedsProfileSetup(false);
+      /* Phantom fires disconnect when it blocks a tx on a flagged host.
+         Keep the Clashr session so the player stays in the lobby. */
     };
 
     provider.on('accountChanged', onAccountChanged);

@@ -11,6 +11,7 @@ import { ENTRY_FEE } from '../types/party';
 import type { GameSlug } from '../../shared/games';
 import { fetchPublicParties } from './partyRemote';
 import { getSupabase } from './supabase';
+import { siteOrigin } from '../../shared/site';
 
 const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROSTER_PREFIX = 'arcade.party.roster.';
@@ -60,7 +61,7 @@ export function createParty(opts: {
 
 export function partyInviteUrl(
   party: Pick<Party, 'id' | 'gameSlug' | 'capacity' | 'hostId' | 'visibility' | 'entry' | 'entryLamports'>,
-  origin = typeof window !== 'undefined' ? window.location.origin : '',
+  origin = siteOrigin(),
 ): string {
   const params = new URLSearchParams({
     cap: String(party.capacity),

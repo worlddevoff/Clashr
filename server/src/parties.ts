@@ -76,6 +76,8 @@ export async function createParty(opts: {
   entry: number;
   entryLamports?: number | null;
   id?: string;
+  escrowPda?: string | null;
+  escrowDeposits?: string[];
 }): Promise<Party> {
   const id = (opts.id || code()).toUpperCase();
   const existing = await prisma.party.findUnique({ where: { id } });
@@ -114,6 +116,8 @@ export async function createParty(opts: {
       status: 'waiting',
       gamePath: null,
       updatedAt: new Date(),
+      ...(opts.escrowPda ? { escrowPda: opts.escrowPda } : {}),
+      ...(opts.escrowDeposits ? { escrowDeposits: opts.escrowDeposits } : {}),
     },
     include: { members: { orderBy: { joinedAt: 'asc' } } },
   });

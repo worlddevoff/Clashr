@@ -37,15 +37,12 @@ import {
   touchPartyState,
 } from '../lib/partyRemote';
 import {
-  clampStakeLamports,
   computeEscrowPool,
   createAndJoinEscrow,
   joinEscrow,
   lamportsToSol,
   lockEscrow,
   parseStakeLamports,
-  saveLastStakeSol,
-  solToLamports,
   withdrawEscrow,
 } from '../lib/escrow';
 import type {
@@ -93,12 +90,11 @@ export function PartyPage() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [staking, setStaking] = useState(false);
+  const [stakeFailed, setStakeFailed] = useState(false);
 
   const partyRef = useRef<Party | null>(null);
   const channelRef = useRef<ReturnType<typeof openPartyChannel> | null>(null);
   const onWireRef = useRef<(msg: PartyWireMessage) => void>(() => undefined);
-  const escrowHostRef = useRef(false);
-  const escrowJoinRef = useRef(false);
   const refundingRef = useRef(false);
   const selfId = user?.id ?? '';
 
@@ -411,15 +407,30 @@ export function PartyPage() {
     return () => window.clearInterval(poll);
   }, [partyId, party?.status, navigate]);
 
-  useEffect(() => {
-    if (!party || !user || !isHost || party.status !== 'waiting' || !potsOn) return;
+  const stakeSelf = useCallback(async () => {
+    if (!party || !user || !potsOn || party.status !== 'waiting') return;
     if (party.members.length < 2) return;
-    if ((party.escrowDeposits ?? []).includes(user.id) || escrowHostRef.current) return;
-    escrowHostRef.current = true;
+    if ((party.escrowDeposits ?? []).includes(user.id)) return;
+    const weAreHost = party.hostId === user.id;
+    if (!weAreHost && !party.escrowPda) {
+      setError('Waiting for the host to open the pot.');
+      return;
+    }
     setStaking(true);
     setError(null);
-    void createAndJoinEscrow(party.id, party.capacity, party.entryLamports ?? stakeLamports)
-      .then(({ pda }) => {
+    setStakeFailed(false);
+    const timeout = window.setTimeout(() => {
+      setStaking(false);
+      setStakeFailed(true);
+      setError('Wallet did not finish. Close Phantom and tap Retry stake.');
+    }, 90_000);
+    try {
+      if (weAreHost) {
+        const { pda } = await createAndJoinEscrow(
+          party.id,
+          party.capacity,
+          party.entryLamports ?? stakeLamports,
+        );
         setParty((prev) => {
           if (!prev) return prev;
           const next: Party = {
@@ -431,23 +442,8 @@ export function PartyPage() {
           channelRef.current?.post({ type: 'sync', party: next });
           return next;
         });
-      })
-      .catch((e: unknown) => {
-        escrowHostRef.current = false;
-        setError(e instanceof Error ? e.message : 'Could not open the match escrow.');
-      })
-      .finally(() => setStaking(false));
-  }, [party, user, isHost]);
-
-  useEffect(() => {
-    if (!party || !user || isHost || party.status !== 'waiting' || !potsOn) return;
-    if (party.members.length < 2 || !party.escrowPda) return;
-    if ((party.escrowDeposits ?? []).includes(user.id) || escrowJoinRef.current) return;
-    escrowJoinRef.current = true;
-    setStaking(true);
-    setError(null);
-    void joinEscrow(party.id)
-      .then(() => {
+      } else {
+        await joinEscrow(party.id);
         channelRef.current?.post({ type: 'deposited', memberId: user.id });
         setParty((prev) => {
           if (!prev) return prev;
@@ -456,31 +452,26 @@ export function PartyPage() {
             escrowDeposits: [...new Set([...(prev.escrowDeposits ?? []), user.id])],
           };
         });
-      })
-      .catch((e: unknown) => {
-        escrowJoinRef.current = false;
-        setError(e instanceof Error ? e.message : 'Could not stake SOL for this party.');
-      })
-      .finally(() => setStaking(false));
-  }, [party, user, isHost]);
+      }
+    } catch (e: unknown) {
+      setStakeFailed(true);
+      setError(e instanceof Error ? e.message : 'Could not stake SOL for this party.');
+    } finally {
+      window.clearTimeout(timeout);
+      setStaking(false);
+    }
+  }, [party, user, potsOn, stakeLamports]);
 
   useEffect(() => {
     if (!party || !user || party.status !== 'waiting') return;
     if (party.members.length >= 2) return;
-    if (!selfStaked || refundingRef.current) {
-      if (!selfStaked) {
-        escrowHostRef.current = false;
-        escrowJoinRef.current = false;
-      }
-      return;
-    }
+    if (!selfStaked || refundingRef.current) return;
     refundingRef.current = true;
     void withdrawEscrow(party.id)
       .catch(() => undefined)
       .finally(() => {
-        escrowHostRef.current = false;
-        escrowJoinRef.current = false;
         refundingRef.current = false;
+        setStakeFailed(false);
         setParty((prev) => {
           if (!prev) return prev;
           const next: Party = {
@@ -497,18 +488,8 @@ export function PartyPage() {
       });
   }, [party, user, selfStaked]);
 
-  const setMatchStake = (sol: number) => {
-    if (!isHost || !party || party.status !== 'waiting') return;
-    if (party.escrowPda || (party.escrowDeposits?.length ?? 0) > 0) return;
-    const lamports = clampStakeLamports(solToLamports(sol));
-    saveLastStakeSol(sol);
-    setParty((prev) => {
-      if (!prev) return prev;
-      const next: Party = { ...prev, entryLamports: lamports };
-      savePartyLobby(next);
-      queueMicrotask(() => channelRef.current?.post({ type: 'sync', party: next }));
-      return next;
-    });
+  const setMatchStake = (_sol: number) => {
+    /* Stake is fixed when the lobby is created. */
   };
 
   const copy = async (kind: 'link' | 'code') => {
@@ -797,14 +778,8 @@ export function PartyPage() {
             <StakePicker
               valueSol={stakeSol}
               onChange={setMatchStake}
-              disabled={!isHost || !!party?.escrowPda || deposits.length > 0}
-              hint={
-                isHost
-                  ? deposits.length > 0 || party?.escrowPda
-                    ? 'Stake is locked for this match because wallets have already deposited.'
-                    : 'This is the amount each wallet stakes for this match. Change it anytime before a second player joins.'
-                  : `${formatSol(stakeSol)} per wallet for this match. Host sets the stake.`
-              }
+              disabled
+              hint={`${formatSol(stakeSol)} per wallet. Locked when this lobby was created.`}
             />
           </div>
           )}
@@ -898,6 +873,13 @@ export function PartyPage() {
             <div className="rounded-xl border border-neon-lime/30 bg-neon-lime/5 px-4 py-3 text-sm text-neon-lime/90">
               Lobby full — start the match when you&apos;re ready.
             </div>
+          )}
+
+          {potsOn && realPot && user && !selfStaked && (
+            <Button size="lg" className="w-full" disabled={staking} onClick={() => void stakeSelf()}>
+              <WalletIcon className="h-5 w-5" />
+              {staking ? 'Waiting for wallet…' : stakeFailed ? 'Retry stake' : isHost ? 'Stake to open pot' : 'Stake SOL'}
+            </Button>
           )}
 
           <div className="flex flex-col gap-3 sm:flex-row">

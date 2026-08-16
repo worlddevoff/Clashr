@@ -163,6 +163,8 @@ export async function publishPartyState(party: Party): Promise<void> {
         entry: party.entry,
         entryLamports: party.entryLamports ?? null,
         visibility: party.visibility,
+        escrowPda: party.escrowPda ?? null,
+        escrowDeposits: party.escrowDeposits ?? [],
       }),
     });
   } catch (err) {

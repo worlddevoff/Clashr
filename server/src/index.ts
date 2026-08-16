@@ -298,6 +298,10 @@ app.post('/api/parties', async (req, res) => {
       entry: Number(req.body.entry) || 0,
       entryLamports: req.body.entryLamports != null ? Number(req.body.entryLamports) : null,
       id: typeof req.body.id === 'string' ? req.body.id : undefined,
+      escrowPda: typeof req.body.escrowPda === 'string' ? req.body.escrowPda : undefined,
+      escrowDeposits: Array.isArray(req.body.escrowDeposits)
+        ? req.body.escrowDeposits.filter((v: unknown) => typeof v === 'string')
+        : undefined,
     });
     res.json({ party });
   } catch (e) {

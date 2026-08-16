@@ -18,12 +18,14 @@ export function getSolanaRpcUrl(): string {
 }
 
 export function getSolanaRpcFallbacks(): string[] {
+  const cluster = getSolanaCluster();
   const primary = getSolanaRpcUrl();
-  const extras = [
-    'https://solana-rpc.publicnode.com',
-    'https://solana.drpc.org',
-    'https://rpc.ankr.com/solana',
-  ];
+  const extras =
+    cluster === 'devnet'
+      ? ['https://api.devnet.solana.com']
+      : cluster === 'testnet'
+        ? ['https://api.testnet.solana.com']
+        : ['https://solana-rpc.publicnode.com', 'https://solana.drpc.org'];
   return [primary, ...extras.filter((u) => u !== primary)];
 }
 

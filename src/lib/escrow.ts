@@ -9,7 +9,7 @@ import { Buffer } from 'buffer';
 import { getSolanaProvider } from './wallet';
 import { getOracleAddress, getTreasuryAddress } from './solanaConfig';
 import { getSolPotsConfig, refreshSolPots } from './solPots';
-import { friendlyRpcError, rpc, sendSignedTransaction } from './solanaRpc';
+import { friendlyRpcError, rpc, sendWalletInstructions } from './solanaRpc';
 
 /** Default program id from `solana/arcade-escrow/keys`. */
 export const DEFAULT_ESCROW_PROGRAM_ID = '6N6QkDcBeH5nmMakCDYegU9kCJqRei5gLKVK4PDAY2yL';
@@ -155,13 +155,6 @@ export async function fetchEscrow(partyId: string): Promise<EscrowAccount | null
   return decodeEscrow(pda.toBase58(), Buffer.from(info.value.data[0], 'base64'));
 }
 
-async function latestBlockhash(): Promise<string> {
-  const latest = await rpc<{ value: { blockhash: string } }>('getLatestBlockhash', [
-    { commitment: 'confirmed' },
-  ]);
-  return latest.value.blockhash;
-}
-
 function payer(): PublicKey {
   const provider = getSolanaProvider();
   const pk = provider?.publicKey?.toString();
@@ -219,17 +212,18 @@ export async function createAndJoinEscrow(
     }
 
     const { treasury, oracle } = await feeAndOracle();
-    const tx = new Transaction({ feePayer: host, recentBlockhash: await latestBlockhash() }).add(
-      ix(buildCreateData(partyId, capacity, entryLamports), [
-        { pubkey: host, isSigner: true, isWritable: true },
-        { pubkey: pda, isSigner: false, isWritable: true },
-        { pubkey: treasury, isSigner: false, isWritable: false },
-        { pubkey: oracle, isSigner: false, isWritable: false },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      ]),
-      joinIx(host, pda),
+    const signature = await sendWalletInstructions((blockhash) =>
+      new Transaction({ feePayer: host, recentBlockhash: blockhash }).add(
+        ix(buildCreateData(partyId, capacity, entryLamports), [
+          { pubkey: host, isSigner: true, isWritable: true },
+          { pubkey: pda, isSigner: false, isWritable: true },
+          { pubkey: treasury, isSigner: false, isWritable: false },
+          { pubkey: oracle, isSigner: false, isWritable: false },
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        ]),
+        joinIx(host, pda),
+      ),
     );
-    const signature = await sendSignedTransaction(tx);
     return { pda: pda.toBase58(), signature };
   } catch (e) {
     throw new Error(friendlyRpcError(e));
@@ -242,10 +236,9 @@ export async function joinEscrow(partyId: string): Promise<string> {
     const [pda] = matchPda(partyId);
     const existing = await fetchEscrow(partyId);
     if (existing?.players.includes(player.toBase58())) return '';
-    const tx = new Transaction({ feePayer: player, recentBlockhash: await latestBlockhash() }).add(
-      joinIx(player, pda),
+    return await sendWalletInstructions((blockhash) =>
+      new Transaction({ feePayer: player, recentBlockhash: blockhash }).add(joinIx(player, pda)),
     );
-    return await sendSignedTransaction(tx);
   } catch (e) {
     throw new Error(friendlyRpcError(e));
   }
@@ -257,13 +250,14 @@ export async function withdrawEscrow(partyId: string): Promise<string> {
     const [pda] = matchPda(partyId);
     const existing = await fetchEscrow(partyId);
     if (!existing?.players.includes(player.toBase58())) return '';
-    const tx = new Transaction({ feePayer: player, recentBlockhash: await latestBlockhash() }).add(
-      ix(Buffer.from([2]), [
-        { pubkey: player, isSigner: true, isWritable: true },
-        { pubkey: pda, isSigner: false, isWritable: true },
-      ]),
+    return await sendWalletInstructions((blockhash) =>
+      new Transaction({ feePayer: player, recentBlockhash: blockhash }).add(
+        ix(Buffer.from([2]), [
+          { pubkey: player, isSigner: true, isWritable: true },
+          { pubkey: pda, isSigner: false, isWritable: true },
+        ]),
+      ),
     );
-    return await sendSignedTransaction(tx);
   } catch (e) {
     throw new Error(friendlyRpcError(e));
   }
@@ -273,13 +267,14 @@ export async function lockEscrow(partyId: string): Promise<string> {
   try {
     const host = payer();
     const [pda] = matchPda(partyId);
-    const tx = new Transaction({ feePayer: host, recentBlockhash: await latestBlockhash() }).add(
-      ix(Buffer.from([3]), [
-        { pubkey: host, isSigner: true, isWritable: false },
-        { pubkey: pda, isSigner: false, isWritable: true },
-      ]),
+    return await sendWalletInstructions((blockhash) =>
+      new Transaction({ feePayer: host, recentBlockhash: blockhash }).add(
+        ix(Buffer.from([3]), [
+          { pubkey: host, isSigner: true, isWritable: false },
+          { pubkey: pda, isSigner: false, isWritable: true },
+        ]),
+      ),
     );
-    return await sendSignedTransaction(tx);
   } catch (e) {
     throw new Error(friendlyRpcError(e));
   }

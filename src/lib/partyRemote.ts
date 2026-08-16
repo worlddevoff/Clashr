@@ -207,6 +207,18 @@ export async function touchPartyState(partyId: string, _hostId?: string): Promis
   }
 }
 
+export async function reportPartyDeposit(partyId: string): Promise<Party | null> {
+  try {
+    const data = await apiJson<{ party: unknown }>(`/api/parties/${partyId.toUpperCase()}/deposit`, {
+      method: 'POST',
+    });
+    return mapRemoteParty(data.party);
+  } catch (err) {
+    console.warn('deposit_party', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function startPartyState(partyId: string, hostIdOrPath: string, gamePath?: string): Promise<void> {
   const path = gamePath ?? hostIdOrPath;
   try {

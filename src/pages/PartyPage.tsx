@@ -33,6 +33,7 @@ import {
   joinPartyState,
   leavePartyState,
   publishPartyState,
+  reportPartyDeposit,
   startPartyState,
   touchPartyState,
 } from '../lib/partyRemote';
@@ -91,11 +92,12 @@ export function PartyPage() {
   const [starting, setStarting] = useState(false);
   const [staking, setStaking] = useState(false);
   const [stakeFailed, setStakeFailed] = useState(false);
+  const [startFailed, setStartFailed] = useState(false);
 
   const partyRef = useRef<Party | null>(null);
   const channelRef = useRef<ReturnType<typeof openPartyChannel> | null>(null);
   const onWireRef = useRef<(msg: PartyWireMessage) => void>(() => undefined);
-  const refundingRef = useRef(false);
+  const startRef = useRef<() => Promise<void>>(async () => undefined);
   const selfId = user?.id ?? '';
 
   useEffect(() => {
@@ -118,9 +120,13 @@ export function PartyPage() {
   const isHost = !!party && party.hostId === selfId;
   const isPublic = party?.visibility === 'public';
   const selfStaked = !!selfId && deposits.includes(selfId);
+  const seated = !!user && !!party && party.members.some((m) => m.id === user.id);
   const realPot = potsOn && !!party && party.members.length >= 2;
   const allStaked = !!party && party.members.every((m) => deposits.includes(m.id));
+  const lobbyFull = !!party && seatsLeft === 0;
   const canStart = !potsOn || !realPot || (allStaked && !staking);
+  const readyToAutoStart =
+    !!party && party.status === 'waiting' && lobbyFull && canStart && !starting && !startFailed;
 
   // Keep public lobby listing in sync (host only)
   useEffect(() => {
@@ -403,7 +409,7 @@ export function PartyPage() {
           };
         });
       });
-    }, 2500);
+    }, 1200);
     return () => window.clearInterval(poll);
   }, [partyId, party?.status, navigate]);
 
@@ -420,10 +426,6 @@ export function PartyPage() {
       setError('This lobby already started.');
       return;
     }
-    if (party.members.length < 2) {
-      setError('Need a second wallet in the lobby before staking.');
-      return;
-    }
     if ((party.escrowDeposits ?? []).includes(user.id)) return;
     const weAreHost = party.hostId === user.id;
     if (!weAreHost && !party.escrowPda) {
@@ -432,7 +434,7 @@ export function PartyPage() {
     }
     setStaking(true);
     setStakeFailed(false);
-    setError('Check Phantom (it may be behind this window). Approve once.');
+    setError(null);
     const timeout = window.setTimeout(() => {
       setStaking(false);
       setStakeFailed(true);
@@ -456,6 +458,7 @@ export function PartyPage() {
           channelRef.current?.post({ type: 'sync', party: next });
           return next;
         });
+        void reportPartyDeposit(party.id);
         setError(null);
       } else {
         await joinEscrow(party.id);
@@ -467,6 +470,7 @@ export function PartyPage() {
             escrowDeposits: [...new Set([...(prev.escrowDeposits ?? []), user.id])],
           };
         });
+        void reportPartyDeposit(party.id);
         setError(null);
       }
     } catch (e: unknown) {
@@ -479,30 +483,26 @@ export function PartyPage() {
   }, [party, user, potsOn, stakeLamports]);
 
   useEffect(() => {
-    if (!party || !user || party.status !== 'waiting') return;
-    if (party.members.length >= 2) return;
-    if (!selfStaked || refundingRef.current) return;
-    refundingRef.current = true;
-    void withdrawEscrow(party.id)
-      .catch(() => undefined)
-      .finally(() => {
-        refundingRef.current = false;
-        setStakeFailed(false);
-        setParty((prev) => {
-          if (!prev) return prev;
-          const next: Party = {
-            ...prev,
-            escrowDeposits: (prev.escrowDeposits ?? []).filter((id) => id !== user.id),
-          };
-          if (prev.hostId === user.id) {
-            channelRef.current?.post({ type: 'sync', party: next });
-          } else {
-            channelRef.current?.post({ type: 'unstaked', memberId: user.id });
-          }
-          return next;
-        });
-      });
-  }, [party, user, selfStaked]);
+    if (!potsOn || !party || !user || party.status !== 'waiting') return;
+    if (!seated || selfStaked || staking || stakeFailed) return;
+    if (party.hostId !== user.id && !party.escrowPda) return;
+    const key = `clashr:autostake:${party.id}:${user.id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    void stakeSelf();
+  }, [
+    potsOn,
+    party?.id,
+    party?.escrowPda,
+    party?.hostId,
+    party?.status,
+    user?.id,
+    seated,
+    selfStaked,
+    staking,
+    stakeFailed,
+    stakeSelf,
+  ]);
 
   const setMatchStake = (_sol: number) => {
     /* Stake is fixed when the lobby is created. */
@@ -542,8 +542,12 @@ export function PartyPage() {
     if (user) {
       channelRef.current?.post({ type: 'leave', memberId: user.id });
       void leavePartyState(partyId, user.id);
+      sessionStorage.removeItem(`clashr:autostake:${partyId}:${user.id}`);
     }
-    if (isHost && party) removePublicParty(party.id);
+    if (isHost && party) {
+      removePublicParty(party.id);
+      sessionStorage.removeItem(`clashr:autostart:${party.id}`);
+    }
     if (current?.status === 'waiting' && selfStaked) {
       void withdrawEscrow(current.id).catch(() => undefined);
     }
@@ -559,12 +563,15 @@ export function PartyPage() {
       return;
     }
     setStarting(true);
+    setStartFailed(false);
     if (paidMatch) {
       try {
         await lockEscrow(party.id);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not lock the match pot.');
         setStarting(false);
+        setStartFailed(true);
+        sessionStorage.removeItem(`clashr:autostart:${party.id}`);
         return;
       }
     }
@@ -592,6 +599,15 @@ export function PartyPage() {
     channelRef.current?.post({ type: 'start', party: next, gamePath, roster });
     navigate(gamePath);
   };
+  startRef.current = start;
+
+  useEffect(() => {
+    if (!isHost || !readyToAutoStart || !party) return;
+    const key = `clashr:autostart:${party.id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    void startRef.current();
+  }, [isHost, readyToAutoStart, party?.id]);
 
   if (!isAuthed || !user) {
     return (
@@ -603,8 +619,8 @@ export function PartyPage() {
           {partyId || '——'}
         </div>
         <p className="text-sm text-white/55">
-          Connect the wallet you want to play with. This screen joins the lobby and asks you to
-          stake.
+          Connect the wallet you want to play with. Joining this lobby stakes {formatSol(stakeSol)}{' '}
+          automatically, then the match starts when every seat is filled.
         </p>
         {party && party.members.length > 0 && (
           <ul className="w-full space-y-2 text-left">
@@ -704,11 +720,11 @@ export function PartyPage() {
           </h1>
           <p className="mt-1 text-sm text-white/55">
             {isPublic
-              ? 'Stays listed in the lobby until the lobby fills — or you start early with bots.'
-              : 'Invite friends with the link or code. Empty seats fill with bots when you start.'}{' '}
+              ? 'Listed until the lobby fills. Stake happens when you sit — the match starts on its own when every seat is staked.'
+              : 'Invite friends with the link or code. Stake happens when you sit — the match starts when every seat is filled and staked.'}{' '}
             You all play the <span className="text-neon-cyan">same match</span>.
             {potsOn
-              ? ' SOL only stakes when 2+ wallets are in — bots are free.'
+              ? ` ${formatSol(stakeSol)} SOL each. Empty seats can still be filled with bots if you start early.`
               : ' Real SOL pots are off until house settlement is live.'}
           </p>
         </div>
@@ -756,7 +772,7 @@ export function PartyPage() {
                 </div>
               ) : potsOn ? (
                 <div className="mt-1 font-display text-sm text-white/50">
-                  {formatSol(stakeSol)} / wallet · free until a second player joins
+                  {formatSol(stakeSol)} / wallet · match starts when full
                 </div>
               ) : (
                 <div className="mt-1 font-display text-sm text-white/50">Demo credits match</div>
@@ -795,7 +811,7 @@ export function PartyPage() {
               valueSol={stakeSol}
               onChange={setMatchStake}
               disabled
-              hint={`${formatSol(stakeSol)} per wallet. Locked when this lobby was created.`}
+              hint={`${formatSol(stakeSol)} per wallet. Approve Phantom to sit. Match starts when the lobby is full.`}
             />
           </div>
           )}
@@ -838,7 +854,7 @@ export function PartyPage() {
                   <span
                     className={cn(
                       'rounded-full px-2 py-0.5 font-display text-[9px] uppercase tracking-widest',
-                      !realPot
+                      !potsOn
                         ? 'bg-white/10 text-white/45'
                         : deposits.includes(m.id)
                           ? 'bg-neon-lime/15 text-neon-lime'
@@ -847,8 +863,8 @@ export function PartyPage() {
                             : 'bg-white/5 text-white/35',
                     )}
                   >
-                    {!realPot
-                      ? 'Practice'
+                    {!potsOn
+                      ? 'Ready'
                       : deposits.includes(m.id)
                         ? 'Staked'
                         : staking && m.id === selfId
@@ -880,21 +896,35 @@ export function PartyPage() {
 
           {isPublic && isHost && seatsLeft > 0 && (
             <div className="rounded-xl border border-neon-cyan/30 bg-neon-cyan/5 px-4 py-3 text-sm text-neon-cyan/90">
-              Waiting for the other wallet. They open the invite link and tap Join party, or go to
-              Play and paste code {party?.id ?? partyId}. This host screen has no Join — you are
-              already in. Start with bots for free, or wait for a second wallet to open a SOL pot.
+              Waiting for players to join and stake. The match starts automatically when every seat
+              is filled. You can still start early with bots.
             </div>
           )}
-          {isPublic && isHost && seatsLeft === 0 && (
+          {lobbyFull && (
             <div className="rounded-xl border border-neon-lime/30 bg-neon-lime/5 px-4 py-3 text-sm text-neon-lime/90">
-              Lobby full — start the match when you&apos;re ready.
+              {potsOn && !allStaked
+                ? 'Lobby full — starting as soon as every wallet has staked.'
+                : starting || readyToAutoStart
+                  ? 'Lobby full and staked — starting the match.'
+                  : 'Lobby full and staked.'}
             </div>
           )}
 
-          {potsOn && realPot && user && !selfStaked && (
-            <Button size="lg" className="w-full" disabled={staking} onClick={() => void stakeSelf()}>
+          {potsOn && seated && !selfStaked && (
+            <Button
+              size="lg"
+              className="w-full"
+              disabled={staking || (!isHost && !party.escrowPda)}
+              onClick={() => void stakeSelf()}
+            >
               <WalletIcon className="h-5 w-5" />
-              {staking ? 'Waiting for wallet…' : stakeFailed ? 'Retry stake' : isHost ? 'Stake to open pot' : 'Stake SOL'}
+              {staking
+                ? 'Approve stake in Phantom…'
+                : !isHost && !party.escrowPda
+                  ? 'Waiting for host to open the pot…'
+                  : stakeFailed
+                    ? 'Retry stake'
+                    : 'Approve stake in Phantom'}
             </Button>
           )}
 
@@ -907,7 +937,7 @@ export function PartyPage() {
                       Sitting in lobby
                     </div>
                     <div className="mt-0.5 text-sm text-white/40">
-                      {party?.members.length}/{party?.capacity} filled · open for joiners
+                      {party?.members.length}/{party?.capacity} filled · starts when full
                     </div>
                   </div>
                   <Button
@@ -922,22 +952,31 @@ export function PartyPage() {
                   </Button>
                 </>
               ) : (
-                <Button size="lg" className="flex-1" disabled={starting || !canStart} onClick={() => void start()}>
+                <Button
+                  size="lg"
+                  className="flex-1"
+                  disabled={starting || !canStart}
+                  onClick={() => void start()}
+                >
                   <PlayIcon className="h-5 w-5" />
                   {starting
                     ? 'Starting…'
                     : seatsLeft > 0
                       ? 'Start · fill with bots'
-                      : isPublic
+                      : startFailed
                         ? 'Start match'
-                        : 'Start party'}
+                        : potsOn && !allStaked
+                          ? 'Waiting for stakes…'
+                          : 'Starting match…'}
                 </Button>
               )
             ) : party.members.some((m) => m.id === selfId) ? (
               <div className="flex-1 rounded-xl border border-ink-600 bg-ink-900 px-4 py-3 text-center font-display text-xs uppercase tracking-widest text-white/45">
-                {isPublic && seatsLeft > 0
-                  ? 'Waiting in lobby for more players…'
-                  : 'Waiting for host to start…'}
+                {seatsLeft > 0
+                  ? 'Waiting for the lobby to fill — match starts automatically.'
+                  : potsOn && !allStaked
+                    ? 'Lobby full — waiting for every wallet to stake.'
+                    : 'Lobby full — match starting.'}
               </div>
             ) : (
               <Button

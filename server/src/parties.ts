@@ -187,7 +187,13 @@ export async function leaveParty(partyId: string, userId: string): Promise<void>
     return;
   }
   await prisma.partyMember.deleteMany({ where: { partyId: id, userId } });
-  await prisma.party.update({ where: { id }, data: { updatedAt: new Date() } });
+  const deposits = Array.isArray(room.escrowDeposits)
+    ? (room.escrowDeposits as unknown[]).filter((v): v is string => typeof v === 'string' && v !== userId)
+    : [];
+  await prisma.party.update({
+    where: { id },
+    data: { escrowDeposits: deposits, updatedAt: new Date() },
+  });
 }
 
 export async function touchParty(partyId: string, hostId: string): Promise<void> {
@@ -195,6 +201,25 @@ export async function touchParty(partyId: string, hostId: string): Promise<void>
     where: { id: partyId.toUpperCase(), hostId, status: 'waiting' },
     data: { updatedAt: new Date() },
   });
+}
+
+export async function recordDeposit(partyId: string, userId: string): Promise<Party> {
+  const id = partyId.toUpperCase();
+  const room = await loadParty(id);
+  if (!room) throw new Error('party not found');
+  if (room.status !== 'waiting') throw new Error('party already started');
+  if (!room.members.some((m) => m.userId === userId)) throw new Error('not in party');
+  const deposits = Array.isArray(room.escrowDeposits)
+    ? (room.escrowDeposits as unknown[]).filter((v): v is string => typeof v === 'string')
+    : [];
+  if (!deposits.includes(userId)) deposits.push(userId);
+  await prisma.party.update({
+    where: { id },
+    data: { escrowDeposits: deposits, updatedAt: new Date() },
+  });
+  const next = await loadParty(id);
+  if (!next) throw new Error('party not found');
+  return toParty(next);
 }
 
 export async function startParty(partyId: string, hostId: string, gamePath: string): Promise<Party> {

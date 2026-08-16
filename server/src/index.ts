@@ -16,6 +16,7 @@ import {
   joinParty,
   leaveParty,
   listPublicParties,
+  recordDeposit,
   startParty,
   touchParty,
 } from './parties.ts';
@@ -356,6 +357,18 @@ app.post('/api/parties/:id/touch', async (req, res) => {
   try {
     await touchParty(req.params.id, user.id);
     res.json({ ok: true });
+  } catch (e) {
+    fail(res, 400, e);
+  }
+});
+
+app.post('/api/parties/:id/deposit', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (tooMany(`deposit:${user.id}`, 40, 60_000)) return res.status(429).json({ error: 'slow down' });
+  try {
+    const party = await recordDeposit(req.params.id, user.id);
+    res.json({ party });
   } catch (e) {
     fail(res, 400, e);
   }

@@ -7,11 +7,16 @@ export function getSolanaCluster(): string {
   return import.meta.env.VITE_SOLANA_CLUSTER?.trim() || 'devnet';
 }
 
+const DEVNET_RPCS = [
+  'https://solana-devnet.api.onfinality.io/public',
+  'https://api.devnet.solana.com',
+] as const;
+
 export function getSolanaRpcUrl(): string {
   const custom = import.meta.env.VITE_SOLANA_RPC?.trim();
   if (custom) return custom;
   const cluster = getSolanaCluster();
-  if (cluster === 'devnet') return 'https://api.devnet.solana.com';
+  if (cluster === 'devnet') return DEVNET_RPCS[0];
   if (cluster === 'testnet') return 'https://api.testnet.solana.com';
   // PublicNode is browser-friendly; api.mainnet-beta.solana.com often returns 403.
   return 'https://solana-rpc.publicnode.com';
@@ -22,11 +27,11 @@ export function getSolanaRpcFallbacks(): string[] {
   const primary = getSolanaRpcUrl();
   const extras =
     cluster === 'devnet'
-      ? ['https://api.devnet.solana.com', 'https://rpc.ankr.com/solana_devnet']
+      ? [...DEVNET_RPCS]
       : cluster === 'testnet'
         ? ['https://api.testnet.solana.com']
         : ['https://solana-rpc.publicnode.com', 'https://solana.drpc.org'];
-  return [primary, ...extras.filter((u) => u !== primary)];
+  return [primary, ...extras.filter((u) => u !== primary && !u.includes('ankr.com'))];
 }
 
 export function getTreasuryAddress(): string {

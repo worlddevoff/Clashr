@@ -14,6 +14,9 @@ export function friendlyRpcError(err: unknown): string {
   if (/rate limit|429/i.test(msg)) {
     return 'Solana is rate-limiting this connection. Wait 20 seconds, then tap Retry stake once.';
   }
+  if (/unauthorized|api key|authenticate your request/i.test(msg)) {
+    return 'Could not reach Solana. Tap Retry stake.';
+  }
   if (/Blockhash not found|blockhash not found|expired.*blockhash/i.test(msg)) {
     return 'Solana dropped the transaction (took too long to approve). Tap stake again right away.';
   }
@@ -35,6 +38,12 @@ function isBlockhashError(err: unknown): boolean {
 
 function isRateLimit(err: unknown): boolean {
   return /429|rate limit/i.test(err instanceof Error ? err.message : String(err));
+}
+
+function isDeadRpc(err: unknown): boolean {
+  return /unauthorized|api key|authenticate your request|not available on free plan|\b401\b|\b403\b|forbidden|failed to fetch|network/i.test(
+    err instanceof Error ? err.message : String(err),
+  );
 }
 
 function sleep(ms: number): Promise<void> {
@@ -66,21 +75,19 @@ export async function rpc<T>(method: string, params: unknown[]): Promise<T> {
         : getSolanaRpcFallbacks();
   let last = 'All Solana RPCs failed.';
   for (const url of urls) {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const result = await rpcAt<T>(url, method, params);
-        stickyRpc = url;
-        return result;
-      } catch (e) {
-        last = e instanceof Error ? e.message : String(e);
-        if (method === 'sendTransaction' && isBlockhashError(e)) throw e;
-        if (isRateLimit(e)) {
-          await sleep(800 * 2 ** attempt);
-          continue;
-        }
-        if (/403|forbidden|failed to fetch|network/i.test(last)) break;
-        throw e;
+    if (url.includes('ankr.com') && !/[?&](api[_-]?key|apikey)=/i.test(url)) continue;
+    try {
+      const result = await rpcAt<T>(url, method, params);
+      stickyRpc = url;
+      return result;
+    } catch (e) {
+      last = e instanceof Error ? e.message : String(e);
+      if (method === 'sendTransaction' && isBlockhashError(e)) throw e;
+      if (isDeadRpc(e) || isRateLimit(e)) {
+        if (stickyRpc === url) stickyRpc = null;
+        continue;
       }
+      throw e;
     }
   }
   throw new Error(last);

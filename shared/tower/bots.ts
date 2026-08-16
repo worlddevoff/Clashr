@@ -15,7 +15,7 @@ export const TOWER_BOT_AVATARS = ['🐸', '🐙', '🦊', '🐵', '🐤', '🐷'
 
 export const TOWER_BOT_COLORS = [
   '#22e5ff',
-  '#ff2ea8',
+  '#ff2b2b',
   '#b2ff59',
   '#ffb020',
   '#a06bff',

@@ -73,7 +73,7 @@ export function Arena({ snap, humanId, arena, onPointerMove, className, suppress
         <div className="absolute inset-0 bg-grid opacity-40" />
         <div
           className="absolute inset-0"
-          style={{ background: 'radial-gradient(circle at 50% 50%, rgba(255,46,168,0.06), transparent 65%)' }}
+          style={{ background: 'radial-gradient(circle at 50% 50%, rgba(255,43,43,0.06), transparent 65%)' }}
         />
 
         {/* scale layer maps engine coords -> element size (arena is fixed logical size) */}
@@ -126,8 +126,8 @@ export function Arena({ snap, humanId, arena, onPointerMove, className, suppress
               top: snap.safeZone.y,
               width: snap.safeZone.w,
               height: snap.safeZone.h,
-              boxShadow: `0 0 0 9999px rgba(120, 6, 30, ${snap.safeZone.storm ? 0.5 : 0.28}), inset 0 0 40px rgba(255,46,168,0.15)`,
-              border: `3px solid ${snap.safeZone.storm ? 'rgba(255,46,108,0.9)' : 'rgba(34,229,255,0.55)'}`,
+              boxShadow: `0 0 0 9999px rgba(120, 6, 30, ${snap.safeZone.storm ? 0.5 : 0.28}), inset 0 0 40px rgba(255,43,43,0.15)`,
+              border: `3px solid ${snap.safeZone.storm ? 'rgba(255,43,43,0.9)' : 'rgba(34,229,255,0.55)'}`,
               transition: 'border-color 0.3s ease-out',
               zIndex: 5,
             }}

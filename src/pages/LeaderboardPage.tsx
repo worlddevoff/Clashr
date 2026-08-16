@@ -53,7 +53,7 @@ export function LeaderboardPage() {
               label="Longest streak"
               value={highlights.longestStreak ? String(highlights.longestStreak.streak) : '—'}
               sub={highlights.longestStreak ? displayName(highlights.longestStreak) : '—'}
-              accent="#ff2ea8"
+              accent="#ff2b2b"
             />
           </div>
 

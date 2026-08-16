@@ -57,7 +57,7 @@ body {
     text-shadow: 0 0 18px rgba(34, 229, 255, 0.55), 0 0 42px rgba(34, 229, 255, 0.25);
   }
   .text-glow-magenta {
-    text-shadow: 0 0 18px rgba(255, 46, 168, 0.55), 0 0 42px rgba(255, 46, 168, 0.25);
+    text-shadow: 0 0 18px rgba(255, 43, 43, 0.55), 0 0 42px rgba(255, 43, 43, 0.25);
   }
   .text-glow-lime {
     text-shadow: 0 0 18px rgba(178, 255, 89, 0.55), 0 0 42px rgba(178, 255, 89, 0.25);
@@ -66,7 +66,7 @@ body {
     box-shadow: 0 0 0 1px rgba(34, 229, 255, 0.4), 0 0 28px rgba(34, 229, 255, 0.28);
   }
   .shadow-glow-magenta {
-    box-shadow: 0 0 0 1px rgba(255, 46, 168, 0.4), 0 0 28px rgba(255, 46, 168, 0.28);
+    box-shadow: 0 0 0 1px rgba(255, 43, 43, 0.4), 0 0 28px rgba(255, 43, 43, 0.28);
   }
   .bg-grid {
     background-image:

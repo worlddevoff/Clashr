@@ -35,7 +35,7 @@ export function MomentsPage() {
       </div>
 
       <section className="mb-10">
-        <SectionHeading kicker="Watch live" title="Live Now" accent="#ff2ea8" />
+        <SectionHeading kicker="Watch live" title="Live Now" accent="#ff2b2b" />
         <div className="rounded-2xl border border-dashed border-ink-600 bg-ink-850 px-6 py-10 text-center text-sm text-white/45">
           Open matches appear on Home and in the lobby when someone hosts a public party.
         </div>

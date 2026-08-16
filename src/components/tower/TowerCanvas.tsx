@@ -365,7 +365,7 @@ function CollapsePlane({ y }: { y: number }) {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y, 0]}>
       <circleGeometry args={[26, 32]} />
-      <meshBasicMaterial color="#ff2ea8" transparent opacity={0.16} side={THREE.DoubleSide} />
+      <meshBasicMaterial color="#ff2b2b" transparent opacity={0.16} side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -428,7 +428,7 @@ export function TowerCanvas({
         <ambientLight intensity={0.45} />
         <directionalLight position={[20, 40, 12]} intensity={1.4} castShadow color="#fff4d2" />
         <pointLight position={[0, 40, 0]} intensity={1.2} color="#22e5ff" />
-        <pointLight position={[8, 10, -8]} intensity={0.8} color="#ff2ea8" />
+        <pointLight position={[8, 10, -8]} intensity={0.8} color="#ff2b2b" />
         <Stars radius={80} depth={40} count={1200} factor={3} fade />
         <Clouds />
         <TowerCore />

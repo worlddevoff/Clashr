@@ -16,11 +16,11 @@ export default {
         line: 'rgba(255,255,255,0.09)',
         neon: {
           cyan: '#2fe0f0',
-          magenta: '#ff2f9e',
+          magenta: '#ff2b2b',
           lime: '#c9f74a',
           amber: '#ffb020',
           violet: '#a78bfa',
-          soft: '#ff7bc2',
+          soft: '#ff6e6e',
         },
       },
       fontFamily: {
@@ -29,7 +29,7 @@ export default {
       },
       boxShadow: {
         panel: '0 30px 80px -40px rgba(0,0,0,0.9)',
-        glow: '0 0 0 1px rgba(255,47,158,0.35), 0 18px 60px -20px rgba(255,47,158,0.45)',
+        glow: '0 0 0 1px rgba(255,43,43,0.35), 0 18px 60px -20px rgba(255,43,43,0.45)',
       },
       transitionTimingFunction: {
         snap: 'cubic-bezier(0.23, 1, 0.32, 1)',

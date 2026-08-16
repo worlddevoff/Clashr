@@ -272,7 +272,7 @@ function GameInstance({
             className="pointer-events-none fixed inset-0 z-30"
             style={{
               background:
-                'radial-gradient(ellipse at center, transparent 35%, rgba(255,46,168,0.55) 100%)',
+                'radial-gradient(ellipse at center, transparent 35%, rgba(255,43,43,0.55) 100%)',
               mixBlendMode: 'soft-light',
             }}
           />

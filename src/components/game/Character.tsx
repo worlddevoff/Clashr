@@ -48,7 +48,7 @@ export function Character({ player, bombTimeLeft, intensity, isYou }: Props) {
   }
 
   const danger = bombTimeLeft != null && bombTimeLeft < 3;
-  const timerColor = bombTimeLeft == null ? '#fff' : bombTimeLeft < 1.5 ? '#ff2ea8' : bombTimeLeft < 4 ? '#ffb020' : '#b2ff59';
+  const timerColor = bombTimeLeft == null ? '#fff' : bombTimeLeft < 1.5 ? '#ff2b2b' : bombTimeLeft < 4 ? '#ffb020' : '#b2ff59';
 
   return (
     <motion.div

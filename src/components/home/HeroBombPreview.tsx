@@ -202,7 +202,7 @@ export function HeroBombPreview() {
       <div className="pointer-events-none absolute right-0 top-0 z-50 h-16 w-16 rounded-bl-3xl border-b-2 border-l-2 border-neon-violet shadow-[-8px_8px_24px_rgba(160,107,255,.28),inset_5px_-5px_18px_rgba(160,107,255,.16)]" />
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between bg-gradient-to-b from-ink-950/85 via-ink-950/25 to-transparent p-4 pb-12">
-        <div className="inline-flex items-center gap-2 rounded-full border border-neon-magenta/40 bg-ink-950/80 px-3 py-1.5 font-display text-[10px] uppercase tracking-[0.18em] text-neon-magenta shadow-[0_0_20px_rgba(255,46,168,.15)] backdrop-blur-md">
+        <div className="inline-flex items-center gap-2 rounded-full border border-neon-magenta/40 bg-ink-950/80 px-3 py-1.5 font-display text-[10px] uppercase tracking-[0.18em] text-neon-magenta shadow-[0_0_20px_rgba(255,43,43,.15)] backdrop-blur-md">
           <RadioIcon className="h-3 w-3" />
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-neon-magenta opacity-70" />
@@ -228,9 +228,9 @@ export function HeroBombPreview() {
             <div
               className="flex items-center gap-2 rounded-full border bg-ink-950/90 px-3 py-1.5 backdrop-blur-md"
               style={{
-                borderColor: isDanger ? 'rgba(255,46,168,.75)' : 'rgba(255,176,32,.45)',
+                borderColor: isDanger ? 'rgba(255,43,43,.75)' : 'rgba(255,176,32,.45)',
                 boxShadow: isDanger
-                  ? '0 0 28px rgba(255,46,168,.38)'
+                  ? '0 0 28px rgba(255,43,43,.38)'
                   : '0 0 22px rgba(255,176,32,.16)',
               }}
             >
@@ -248,7 +248,7 @@ export function HeroBombPreview() {
               </motion.span>
               <span
                 className="font-display text-xs font-bold tabular-nums"
-                style={{ color: isDanger ? '#ff2ea8' : '#ffb020' }}
+                style={{ color: isDanger ? '#ff2b2b' : '#ffb020' }}
               >
                 {fuse.toFixed(1)}s
               </span>
@@ -281,7 +281,7 @@ export function HeroBombPreview() {
                 initial={{ scale: 0.4, rotate: -12 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ type: 'spring', stiffness: 260, damping: 15 }}
-                className="text-6xl drop-shadow-[0_0_24px_rgba(255,46,168,0.75)]"
+                className="text-6xl drop-shadow-[0_0_24px_rgba(255,43,43,0.75)]"
               >
                 {winner.avatar}
               </motion.div>
@@ -310,7 +310,7 @@ export function HeroBombPreview() {
             aria-label={`Try Bomb Party for ${DEMO_SECONDS} seconds`}
           >
             <span className="absolute inset-x-0 bottom-0 flex items-end justify-end bg-gradient-to-t from-ink-950/95 via-ink-950/40 to-transparent px-4 pb-4 pt-16">
-              <span className="inline-flex items-center gap-2 rounded-full border border-neon-cyan/60 bg-ink-950/90 px-4 py-2.5 font-display text-[10px] font-semibold uppercase tracking-widest text-white shadow-[0_0_26px_rgba(34,229,255,.24)] backdrop-blur-md transition duration-200 group-hover:-translate-y-1 group-hover:border-neon-magenta group-hover:shadow-[0_0_28px_rgba(255,46,168,.34)]">
+              <span className="inline-flex items-center gap-2 rounded-full border border-neon-cyan/60 bg-ink-950/90 px-4 py-2.5 font-display text-[10px] font-semibold uppercase tracking-widest text-white shadow-[0_0_26px_rgba(34,229,255,.24)] backdrop-blur-md transition duration-200 group-hover:-translate-y-1 group-hover:border-neon-magenta group-hover:shadow-[0_0_28px_rgba(255,43,43,.34)]">
                 <PlayIcon className="h-3.5 w-3.5 fill-neon-cyan text-neon-cyan" />
                 Try it for {DEMO_SECONDS}s
               </span>
@@ -359,7 +359,7 @@ export function HeroBombPreview() {
                 <button
                   type="button"
                   onClick={() => navigate('/play/bomb-party')}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-neon-magenta px-4 py-2.5 font-display text-[10px] font-semibold uppercase tracking-widest text-white shadow-[0_0_24px_rgba(255,46,168,.38)] transition hover:-translate-y-0.5 hover:shadow-[0_0_32px_rgba(255,46,168,.55)]"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-neon-magenta px-4 py-2.5 font-display text-[10px] font-semibold uppercase tracking-widest text-white shadow-[0_0_24px_rgba(255,43,43,.38)] transition hover:-translate-y-0.5 hover:shadow-[0_0_32px_rgba(255,43,43,.55)]"
                 >
                   <PlayIcon className="h-3.5 w-3.5 fill-current" />
                   Play full game

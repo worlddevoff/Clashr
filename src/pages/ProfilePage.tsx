@@ -99,7 +99,7 @@ export function ProfilePage() {
         <Stat label="Wins" value={String(user.wins)} accent="#b2ff59" />
         <Stat label="Win rate" value={`${rate}%`} accent="#22e5ff" />
         <Stat label="Biggest win" value={user.biggestWin > 0 ? formatSol(user.biggestWin) : '—'} accent="#ffb020" />
-        <Stat label="Streak" value={`${user.streak}`} accent="#ff2ea8" />
+        <Stat label="Streak" value={`${user.streak}`} accent="#ff2b2b" />
         <Stat label="Level" value={String(user.level)} accent="#a06bff" />
       </div>
 

@@ -8,7 +8,7 @@ import { Button } from '../ui/Button';
 const STATUS_MAP: Record<LiveGame['status'], { label: string; color: string }> = {
   filling: { label: 'Filling up', color: '#b2ff59' },
   starting: { label: 'Starting', color: '#ffb020' },
-  live: { label: 'Live', color: '#ff2ea8' },
+  live: { label: 'Live', color: '#ff2b2b' },
 };
 
 export function LiveGameCard({

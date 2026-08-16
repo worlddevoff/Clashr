@@ -12,7 +12,7 @@ export function Logo({ className, compact }: { className?: string; compact?: boo
       aria-label={SITE_TITLE}
     >
       CLASH
-      <span className="text-[#ff2b2b] drop-shadow-[0_0_8px_rgba(255,43,43,0.55)]">R</span>
+      <span className="text-neon-magenta drop-shadow-[0_0_8px_rgba(255,43,43,0.55)]">R</span>
     </span>
   );
 }

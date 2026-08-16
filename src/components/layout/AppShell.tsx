@@ -12,6 +12,7 @@ export function AppShell() {
   const [authOpen, setAuthOpen] = useState(false);
   const isPublicBrowse =
     location.pathname === '/' ||
+    location.pathname === '/how-it-works' ||
     location.pathname === '/leaderboard' ||
     location.pathname === '/terms' ||
     location.pathname === '/privacy' ||

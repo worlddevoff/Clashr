@@ -13,6 +13,7 @@ import { PartyPage } from './pages/PartyPage';
 import { GamePage } from './pages/GamePage';
 import { LeaderboardPage } from './pages/LeaderboardPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { HowItWorksPage } from './pages/HowItWorksPage';
 import { PrivacyPage, ResponsiblePlayPage, TermsPage } from './pages/LegalPages';
 import { LegalGate } from './components/LegalGate';
 
@@ -32,6 +33,7 @@ export function App() {
                   <Route path="/party/:partyId" element={<PartyPage />} />
                   <Route path="/leaderboard" element={<LeaderboardPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/how-it-works" element={<HowItWorksPage />} />
                   <Route path="/terms" element={<TermsPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
                   <Route path="/responsible-play" element={<ResponsiblePlayPage />} />

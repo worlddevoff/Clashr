@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { HomeIcon, Gamepad2Icon, TrophyIcon, PlayIcon } from 'lucide-react';
+import { CircleHelpIcon, HomeIcon, Gamepad2Icon, TrophyIcon, PlayIcon } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 import { WalletButton } from '../WalletButton';
 import { Button } from '../ui/Button';
@@ -9,6 +9,7 @@ import { cn } from '../../utils/cn';
 export const NAV_ITEMS = [
   { to: '/', label: 'Home', icon: HomeIcon, end: true },
   { to: '/play', label: 'Play', icon: Gamepad2Icon, end: false },
+  { to: '/how-it-works', label: 'How it works', icon: CircleHelpIcon, end: true },
   { to: '/leaderboard', label: 'Leaderboard', icon: TrophyIcon, end: false },
 ];
 
@@ -46,14 +47,6 @@ export function TopNav({ onAuth }: { onAuth: () => void }) {
                 </NavLink>
               </li>
             ))}
-            <li>
-              <a
-                href="/#how-it-works"
-                className="rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors duration-150 ease-snap hover:bg-white/5 hover:text-white"
-              >
-                How it works
-              </a>
-            </li>
           </ul>
         </nav>
 
@@ -92,7 +85,7 @@ export function TopNav({ onAuth }: { onAuth: () => void }) {
 export function BottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-line bg-ink-950/95 backdrop-blur-xl lg:hidden">
-      <div className="mx-auto grid max-w-lg grid-cols-3">
+      <div className="mx-auto grid max-w-lg grid-cols-4">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isPlay = item.to === '/play';

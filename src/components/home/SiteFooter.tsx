@@ -22,7 +22,7 @@ const columns = [
   {
     title: 'Trust',
     links: [
-      { label: 'How escrow works', to: '/#how-it-works' },
+      { label: 'How it works', to: '/how-it-works' },
       { label: 'Terms', to: '/terms' },
       { label: 'Privacy', to: '/privacy' },
       { label: 'Responsible play', to: '/responsible-play' },

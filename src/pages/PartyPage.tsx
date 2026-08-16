@@ -408,8 +408,22 @@ export function PartyPage() {
   }, [partyId, party?.status, navigate]);
 
   const stakeSelf = useCallback(async () => {
-    if (!party || !user || !potsOn || party.status !== 'waiting') return;
-    if (party.members.length < 2) return;
+    if (!party || !user) {
+      setError('Connect a wallet to stake.');
+      return;
+    }
+    if (!potsOn) {
+      setError('SOL pots are not live on the match server yet.');
+      return;
+    }
+    if (party.status !== 'waiting') {
+      setError('This lobby already started.');
+      return;
+    }
+    if (party.members.length < 2) {
+      setError('Need a second wallet in the lobby before staking.');
+      return;
+    }
     if ((party.escrowDeposits ?? []).includes(user.id)) return;
     const weAreHost = party.hostId === user.id;
     if (!weAreHost && !party.escrowPda) {
@@ -417,8 +431,8 @@ export function PartyPage() {
       return;
     }
     setStaking(true);
-    setError(null);
     setStakeFailed(false);
+    setError('Check Phantom (it may be behind this window). Approve once.');
     const timeout = window.setTimeout(() => {
       setStaking(false);
       setStakeFailed(true);
@@ -442,6 +456,7 @@ export function PartyPage() {
           channelRef.current?.post({ type: 'sync', party: next });
           return next;
         });
+        setError(null);
       } else {
         await joinEscrow(party.id);
         channelRef.current?.post({ type: 'deposited', memberId: user.id });
@@ -452,6 +467,7 @@ export function PartyPage() {
             escrowDeposits: [...new Set([...(prev.escrowDeposits ?? []), user.id])],
           };
         });
+        setError(null);
       }
     } catch (e: unknown) {
       setStakeFailed(true);

@@ -22,7 +22,7 @@ export function getSolanaRpcFallbacks(): string[] {
   const primary = getSolanaRpcUrl();
   const extras =
     cluster === 'devnet'
-      ? ['https://api.devnet.solana.com']
+      ? ['https://api.devnet.solana.com', 'https://rpc.ankr.com/solana_devnet']
       : cluster === 'testnet'
         ? ['https://api.testnet.solana.com']
         : ['https://solana-rpc.publicnode.com', 'https://solana.drpc.org'];

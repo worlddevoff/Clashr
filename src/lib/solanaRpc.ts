@@ -11,6 +11,9 @@ export function friendlyRpcError(err: unknown): string {
   if (/Attempt to load a program that does not exist|incorrect program id|Invalid program id/i.test(msg)) {
     return 'Match escrow program is not deployed on this cluster yet.';
   }
+  if (/rate limit|429/i.test(msg)) {
+    return 'Solana is rate-limiting this connection. Wait 20 seconds, then tap Retry stake once.';
+  }
   if (/Blockhash not found|blockhash not found|expired.*blockhash/i.test(msg)) {
     return 'Solana dropped the transaction (took too long to approve). Tap stake again right away.';
   }
@@ -28,6 +31,14 @@ export function friendlyRpcError(err: unknown): string {
 
 function isBlockhashError(err: unknown): boolean {
   return /blockhash not found|expired.*blockhash/i.test(err instanceof Error ? err.message : String(err));
+}
+
+function isRateLimit(err: unknown): boolean {
+  return /429|rate limit/i.test(err instanceof Error ? err.message : String(err));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => window.setTimeout(r, ms));
 }
 
 async function rpcAt<T>(url: string, method: string, params: unknown[]): Promise<T> {
@@ -55,15 +66,21 @@ export async function rpc<T>(method: string, params: unknown[]): Promise<T> {
         : getSolanaRpcFallbacks();
   let last = 'All Solana RPCs failed.';
   for (const url of urls) {
-    try {
-      const result = await rpcAt<T>(url, method, params);
-      stickyRpc = url;
-      return result;
-    } catch (e) {
-      last = e instanceof Error ? e.message : String(e);
-      if (method === 'sendTransaction' && isBlockhashError(e)) throw e;
-      if (/403|forbidden|429|failed to fetch|network/i.test(last)) continue;
-      throw e;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const result = await rpcAt<T>(url, method, params);
+        stickyRpc = url;
+        return result;
+      } catch (e) {
+        last = e instanceof Error ? e.message : String(e);
+        if (method === 'sendTransaction' && isBlockhashError(e)) throw e;
+        if (isRateLimit(e)) {
+          await sleep(800 * 2 ** attempt);
+          continue;
+        }
+        if (/403|forbidden|failed to fetch|network/i.test(last)) break;
+        throw e;
+      }
     }
   }
   throw new Error(last);
@@ -83,7 +100,11 @@ export async function sendSignedTransaction(tx: Transaction): Promise<string> {
   }
 
   let signature: string;
-  if (provider.signTransaction) {
+  // Prefer the wallet's own RPC so public Devnet nodes are not hammered.
+  if (provider.signAndSendTransaction) {
+    const sent = await provider.signAndSendTransaction(tx);
+    signature = sent.signature;
+  } else if (provider.signTransaction) {
     const signed = (await provider.signTransaction(tx)) as Transaction;
     const raw = signed.serialize();
     const b64 =
@@ -94,26 +115,28 @@ export async function sendSignedTransaction(tx: Transaction): Promise<string> {
       b64,
       { encoding: 'base64', skipPreflight: false, maxRetries: 5, preflightCommitment: 'confirmed' },
     ]);
-  } else if (provider.signAndSendTransaction) {
-    const sent = await provider.signAndSendTransaction(tx);
-    signature = sent.signature;
   } else {
     throw new Error('This wallet cannot send transactions. Try Phantom.');
   }
 
-  for (let i = 0; i < 40; i++) {
-    const st = await rpc<{ value: Array<{ err: unknown; confirmationStatus?: string } | null> }>(
-      'getSignatureStatuses',
-      [[signature], { searchTransactionHistory: true }],
-    );
-    const info = st.value[0];
-    if (info?.err) {
-      throw new Error('Transaction failed on Solana.');
+  for (let i = 0; i < 12; i++) {
+    try {
+      const st = await rpc<{ value: Array<{ err: unknown; confirmationStatus?: string } | null> }>(
+        'getSignatureStatuses',
+        [[signature], { searchTransactionHistory: true }],
+      );
+      const info = st.value[0];
+      if (info?.err) {
+        throw new Error('Transaction failed on Solana.');
+      }
+      if (info?.confirmationStatus === 'confirmed' || info?.confirmationStatus === 'finalized') {
+        return signature;
+      }
+    } catch (err) {
+      if (isRateLimit(err)) return signature;
+      throw err;
     }
-    if (info?.confirmationStatus === 'confirmed' || info?.confirmationStatus === 'finalized') {
-      return signature;
-    }
-    await new Promise((r) => window.setTimeout(r, 400));
+    await sleep(1000);
   }
   return signature;
 }
@@ -127,6 +150,7 @@ export async function sendWalletInstructions(build: (blockhash: string) => Trans
       return await sendSignedTransaction(build(blockhash));
     } catch (err) {
       last = err;
+      if (isRateLimit(err)) throw err;
       if (!isBlockhashError(err) && !/blockhash/i.test(friendlyRpcError(err))) throw err;
     }
   }

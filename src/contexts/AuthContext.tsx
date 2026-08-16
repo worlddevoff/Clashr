@@ -10,17 +10,19 @@ import {
 } from 'react';
 import type { User } from '../types/domain';
 import { AVATARS, NEON_COLORS, randomFrom } from '../data/avatars';
-import { apiJson } from '../lib/api';
+import { ApiError, apiJson } from '../lib/api';
 import { getSessionToken, setSessionToken } from '../lib/session';
 import {
   connectSolana,
   disconnectSolana,
-  getSolanaProvider,
   normalizeAddress,
+  restoreSolanaConnection,
   shortAddress,
   signArcadeMessage,
+  waitForSolanaProvider,
   walletErrorMessage,
   type SolanaPublicKey,
+  type SolanaProvider,
 } from '../lib/wallet';
 
 export type ConnectWalletResult =
@@ -68,19 +70,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await apiJson<{ user: User | null }>('/api/me');
       persistSession(asUser(data.user));
-    } catch {
-      setSessionToken(null);
-      persistSession(null);
+    } catch (err) {
+      // A temporary server/network failure must not disconnect the wallet.
+      // Only an explicit unauthorized response proves the session is invalid.
+      if (err instanceof ApiError && err.status === 401) {
+        setSessionToken(null);
+        persistSession(null);
+      }
     }
   }, [persistSession]);
 
   useEffect(() => {
     void refreshUser();
+    const onOnline = () => void refreshUser();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshUser();
+    };
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [refreshUser]);
 
   useEffect(() => {
-    const provider = getSolanaProvider();
-    if (!provider?.on) return;
+    let provider: SolanaProvider | null = null;
+    let cancelled = false;
 
     const onAccountChanged = (publicKey: unknown) => {
       const key = publicKey as SolanaPublicKey | null;
@@ -101,15 +117,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          Keep the Clashr session so the player stays in the lobby. */
     };
 
-    provider.on('accountChanged', onAccountChanged);
-    provider.on('disconnect', onDisconnect);
+    void waitForSolanaProvider().then((found) => {
+      if (cancelled || !found?.on) return;
+      provider = found;
+      found.on('accountChanged', onAccountChanged);
+      found.on('disconnect', onDisconnect);
+    });
+
     return () => {
-      provider.off?.('accountChanged', onAccountChanged);
-      provider.off?.('disconnect', onDisconnect);
-      provider.removeListener?.('accountChanged', onAccountChanged);
-      provider.removeListener?.('disconnect', onDisconnect);
+      cancelled = true;
+      provider?.off?.('accountChanged', onAccountChanged);
+      provider?.off?.('disconnect', onDisconnect);
+      provider?.removeListener?.('accountChanged', onAccountChanged);
+      provider?.removeListener?.('disconnect', onDisconnect);
     };
-  }, [persistSession]);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const expected = normalizeAddress(user.id);
+    void restoreSolanaConnection().then((address) => {
+      if (!address || normalizeAddress(address) === expected) return;
+      setSessionToken(null);
+      persistSession(null);
+      setNeedsProfileSetup(false);
+    });
+  }, [user?.id, persistSession]);
 
   const connectWallet = useCallback(async (): Promise<ConnectWalletResult> => {
     setConnecting(true);

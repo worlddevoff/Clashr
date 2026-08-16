@@ -18,6 +18,11 @@ export function TopNav({ onAuth }: { onAuth: () => void }) {
 
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-ink-950/85 backdrop-blur-md">
+      <div className="border-b border-neon-magenta/30 bg-gradient-to-r from-neon-magenta/15 via-neon-magenta/25 to-neon-cyan/15 px-4 py-2 text-center font-display text-[11px] font-semibold uppercase tracking-[0.08em] text-white sm:text-xs">
+        <span className="text-neon-cyan">⚔️ $CLASHR IS LIVE</span>
+        <span aria-hidden="true"> — </span>
+        <span>Get in early. Join the community. Help build the PvP crypto arcade.</span>
+      </div>
       <div className="mx-auto flex h-16 w-full max-w-[1240px] items-center gap-8 px-5 lg:px-8">
         <NavLink to="/" className="shrink-0" aria-label="CLASHR home">
           <Logo />

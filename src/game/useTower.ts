@@ -18,14 +18,29 @@ export function useLocalTower(fighters: TowerFighter[], humanId: string) {
       practice: true,
     });
     engineRef.current = engine;
+    setSnap(engine.snapshot());
     let raf = 0;
     let last = performance.now();
+    let lastPublished = last;
+    let accumulator = 0;
+    const tickMs = 1000 / 60;
     const loop = (t: number) => {
-      const dt = Math.min(48, t - last);
+      const dt = Math.min(100, t - last);
       last = t;
-      engine.step(dt);
-      setSnap(engine.snapshot());
+      accumulator += dt;
+      while (accumulator >= tickMs) {
+        engine.step(tickMs);
+        accumulator -= tickMs;
+      }
+      // Keep physics on the server's fixed 60 Hz step, but publish React state at 30 Hz.
+      // The Three.js scene interpolates between snapshots, avoiding a full
+      // page/component reconciliation on every animation frame.
+      if (t - lastPublished >= 1000 / 30) {
+        lastPublished = t;
+        setSnap(engine.snapshot());
+      }
       if (engine.finished && engine.result) {
+        setSnap(engine.snapshot());
         setResult(engine.result);
         return;
       }

@@ -49,7 +49,8 @@ export const TERMINAL_VELOCITY = 38;
 /** Peak height of a full-hold jump. Level generation and bot pathing key off this. */
 export const MAX_JUMP_HEIGHT = (JUMP_SPEED * JUMP_SPEED) / (2 * GRAVITY);
 export const TICK_HZ = 60;
-export const SNAPSHOT_EVERY = 3;
+/** Broadcast authoritative movement at 30 Hz; rendering interpolates between snapshots. */
+export const SNAPSHOT_EVERY = 2;
 export const FINAL_ALIVE_THRESHOLD = 3;
 export const MATCH_TIME_LIMIT = 180;
 export const COUNTDOWN_SEC = 3;

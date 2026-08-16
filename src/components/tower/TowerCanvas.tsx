@@ -1,6 +1,6 @@
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Billboard, Stars, Text } from '@react-three/drei';
-import { useMemo, useRef } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import type { Group, Mesh } from 'three';
 import * as THREE from 'three';
 import { generateTower } from '../../../shared/tower/generator';
@@ -12,7 +12,7 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-function PlatformMesh({
+const PlatformMesh = memo(function PlatformMesh({
   p,
   moving,
 }: {
@@ -47,7 +47,7 @@ function PlatformMesh({
       />
     </mesh>
   );
-}
+});
 
 function Bean({ color, anim }: { color: string; anim: string }) {
   const squash = anim === 'shove' ? 1.15 : anim === 'ragdoll' ? 0.85 : anim === 'jump' ? 0.9 : 1;
@@ -112,26 +112,31 @@ function Players({
   humanId,
   focusId,
   showNames,
+  renderedPositions,
 }: {
   snap: TowerSnapshot;
   humanId: string;
   focusId: string;
   showNames: boolean;
+  renderedPositions: { current: Map<string, THREE.Vector3> };
 }) {
   const fromRef = useRef(snap);
   const toRef = useRef(snap);
   const t0 = useRef(performance.now());
+  const spanRef = useRef(50);
   const groups = useRef(new Map<string, Group>());
 
   if (toRef.current.tick !== snap.tick) {
+    const now = performance.now();
+    const interval = now - t0.current;
     fromRef.current = toRef.current;
     toRef.current = snap;
-    t0.current = performance.now();
+    spanRef.current = Math.max(16, Math.min(80, interval * 1.1));
+    t0.current = now;
   }
 
   useFrame(() => {
-    const span = 50;
-    const t = Math.min(1, (performance.now() - t0.current) / span);
+    const t = Math.min(1, (performance.now() - t0.current) / spanRef.current);
     const from = fromRef.current;
     const to = toRef.current;
     for (const p of to.players) {
@@ -139,7 +144,11 @@ function Players({
       if (!g) continue;
       const prev = from.players.find((x) => x.id === p.id) ?? p;
       g.position.set(lerp(prev.x, p.x, t), lerp(prev.y, p.y, t), lerp(prev.z, p.z, t));
-      g.rotation.y = lerp(prev.yaw, p.yaw, t);
+      const yawDelta = THREE.MathUtils.euclideanModulo(p.yaw - prev.yaw + Math.PI, Math.PI * 2) - Math.PI;
+      g.rotation.y = prev.yaw + yawDelta * t;
+      const rendered = renderedPositions.current.get(p.id) ?? new THREE.Vector3();
+      rendered.copy(g.position);
+      renderedPositions.current.set(p.id, rendered);
     }
   });
 
@@ -153,7 +162,10 @@ function Players({
             key={p.id}
             ref={(node) => {
               if (node) groups.current.set(p.id, node);
-              else groups.current.delete(p.id);
+              else {
+                groups.current.delete(p.id);
+                renderedPositions.current.delete(p.id);
+              }
             }}
             position={[p.x, p.y, p.z]}
             rotation={[0, p.yaw, 0]}
@@ -195,12 +207,14 @@ function FollowCam({
   yawRef,
   pitchRef,
   distRef,
+  renderedPositions,
 }: {
   snap: TowerSnapshot;
   focusId: string;
   yawRef: { current: number };
   pitchRef: { current: number };
   distRef: { current: number };
+  renderedPositions: { current: Map<string, THREE.Vector3> };
 }) {
   const smoothed = useRef(new THREE.Vector3());
   const focus = useRef(new THREE.Vector3());
@@ -229,13 +243,17 @@ function FollowCam({
     const yaw = yawRef.current;
     const pitch = pitchRef.current;
     const fwd = cameraForward(yaw);
+    const renderedTarget = renderedPositions.current.get(target.id);
+    const targetX = renderedTarget?.x ?? target.x;
+    const targetY = renderedTarget?.y ?? target.y;
+    const targetZ = renderedTarget?.z ?? target.z;
 
     // Look a little ahead and above the body so the next platform stays in frame
     // and the player sits in the lower-middle of the screen.
     focus.current.set(
-      target.x + fwd.x * LOOK_AHEAD,
-      target.y + LOOK_HEIGHT,
-      target.z + fwd.z * LOOK_AHEAD,
+      targetX + fwd.x * LOOK_AHEAD,
+      targetY + LOOK_HEIGHT,
+      targetZ + fwd.z * LOOK_AHEAD,
     );
     if (!ready.current) {
       smoothed.current.copy(focus.current);
@@ -411,6 +429,7 @@ export function TowerCanvas({
 }) {
   const blueprint = useMemo(() => generateTower(snap.seed), [snap.seed]);
   const moving = useMemo(() => new Map(snap.moving.map((m) => [m.id, m])), [snap.moving]);
+  const renderedPositions = useRef(new Map<string, THREE.Vector3>());
   const focus = focusId ?? humanId;
 
   return (
@@ -435,8 +454,21 @@ export function TowerCanvas({
         {blueprint.platforms.map((p) => (
           <PlatformMesh key={p.id} p={p} moving={moving.get(p.id)} />
         ))}
-        <Players snap={snap} humanId={humanId} focusId={focus} showNames={showNames} />
-        <FollowCam snap={snap} focusId={focus} yawRef={yawRef} pitchRef={pitchRef} distRef={distRef} />
+        <Players
+          snap={snap}
+          humanId={humanId}
+          focusId={focus}
+          showNames={showNames}
+          renderedPositions={renderedPositions}
+        />
+        <FollowCam
+          snap={snap}
+          focusId={focus}
+          yawRef={yawRef}
+          pitchRef={pitchRef}
+          distRef={distRef}
+          renderedPositions={renderedPositions}
+        />
         {snap.phase === 'final' && <CollapsePlane y={snap.collapseY} />}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -8, 0]}>
           <circleGeometry args={[40, 24]} />

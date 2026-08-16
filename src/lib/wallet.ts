@@ -123,6 +123,19 @@ export async function connectSolana(): Promise<string> {
   }
 }
 
+/** Restore a previously approved wallet without opening an approval prompt. */
+export async function restoreSolanaConnection(): Promise<string | null> {
+  const provider = await waitForSolanaProvider();
+  if (!provider) return null;
+  if (provider.publicKey) return provider.publicKey.toString();
+  try {
+    const res = await provider.connect({ onlyIfTrusted: true });
+    return res.publicKey.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function getConnectedAddress(): Promise<string | null> {
   const provider = getSolanaProvider();
   if (!provider?.publicKey) return null;

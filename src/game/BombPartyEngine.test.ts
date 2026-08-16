@@ -21,7 +21,7 @@ function seed(n = 4): BombPartySeedPlayer[] {
   }));
 }
 
-function makeEngine(players = 4, startTimer = 8) {
+function makeEngine(players = 4, startTimer = 12) {
   return new BombPartyEngine(seed(players), {
     arena: ARENA,
     startTimer,
@@ -70,17 +70,20 @@ describe('Bomb Party storm', () => {
 });
 
 describe('Bomb Party fuse', () => {
-  it('opens shorter than the old 10-second hold', () => {
+  it('gives every holder a 12-second fuse', () => {
     const engine = makeEngine();
-    expect(engine.snapshot().bomb?.timeLeft).toBeLessThanOrEqual(8);
-    expect(engine.snapshot().bomb?.timeLeft).toBeGreaterThan(7);
+    expect(engine.snapshot().bomb?.timeLeft).toBe(12);
   });
 
-  it('hands the next holder a tighter fuse in a closed arena', () => {
-    const engine = makeEngine(4, 8);
+  it('keeps the 12-second fuse in a closed arena', () => {
+    const engine = makeEngine(4);
     engine.debugSetElapsed(ZONE_GRACE_MS + ZONE_CLOSE_MS);
-    expect(engine.getHoldSeconds()).toBeLessThanOrEqual(5.5);
-    expect(engine.getHoldSeconds()).toBeGreaterThanOrEqual(4.5);
+    expect(engine.getHoldSeconds()).toBe(12);
+  });
+
+  it('keeps the 12-second fuse with two players', () => {
+    const engine = makeEngine(2);
+    expect(engine.getHoldSeconds()).toBe(12);
   });
 });
 

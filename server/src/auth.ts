@@ -68,13 +68,22 @@ export async function loginWithSignature(opts: {
   }
 
   const token = crypto.randomBytes(24).toString('hex');
-  await prisma.session.create({
-    data: {
-      userId: user.id,
-      nonce: opts.nonce,
-      token,
-      expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
-    },
+  await prisma.$transaction(async (tx) => {
+    const session = await tx.session.create({
+      data: {
+        userId: user.id,
+        nonce: opts.nonce,
+        token,
+        expiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+      },
+    });
+    await tx.walletConnectionEvent.create({
+      data: {
+        walletAddress: user.id,
+        eventType: existed ? 'connection' : 'signup',
+        sessionId: session.id,
+      },
+    });
   });
   return { token, userId: user.id, isNew: !existed };
 }

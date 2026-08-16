@@ -9,6 +9,7 @@ import { TutorialOverlay } from '../components/game/TutorialOverlay';
 import { useBombParty, useNetworkBombParty, bombResultToGame } from '../game/useBombParty';
 import { useGameJuice } from '../game/useGameJuice';
 import { TAUNTS } from '../game/BombPartyEngine';
+import { getBombMap } from '../game/bombMaps';
 import { useGameSetup, buildResult, type SessionSetup } from '../game/useGameSession';
 import { useEconomy } from '../contexts/EconomyContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -99,6 +100,7 @@ function GameInstance({
   const { updateUser, user, refreshUser } = useAuth();
   const { recordMatch } = useLeaderboard();
   const [result, setResult] = useState<GameResult | null>(null);
+  const [localMap] = useState(() => getBombMap(Math.floor(Math.random() * 1_000_000_000), ARENA.width, ARENA.height));
   const settledRef = useRef(false);
   const runLocal = !partyId;
 
@@ -196,7 +198,9 @@ function GameInstance({
     seed: setup.seed,
     arena: ARENA,
     humanId: setup.humanId,
-    startTimer: 8,
+    startTimer: 12,
+    hazards: localMap.hazards,
+    mapId: localMap.id,
     runLocal,
     onFinish: runLocal ? onFinish : undefined,
   });

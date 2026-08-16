@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Arena } from '../game/Arena';
 import { BombPartyEngine, type BombPartySeedPlayer } from '../../game/BombPartyEngine';
+import { getBombMap } from '../../game/bombMaps';
 import { AVATARS, BOT_NAMES, NEON_COLORS } from '../../data/avatars';
 import type { EngineSnapshot } from '../../types/game';
 
@@ -38,12 +39,15 @@ export function LineupBombPreview() {
 
   useEffect(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const map = getBombMap(Math.floor(Math.random() * 1_000_000_000), ARENA.width, ARENA.height);
     const engine = new BombPartyEngine(makeSeed(), {
       arena: ARENA,
       startTimer: 14,
       passTimeBonus: 0,
       humanId: '',
       countdownMs: 0,
+      hazards: map.hazards,
+      mapId: map.id,
     });
     setSnap(engine.snapshot());
 

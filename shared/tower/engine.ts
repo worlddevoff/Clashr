@@ -843,7 +843,9 @@ export class TowerEngine {
     if (this.phase !== 'live') return;
     const alive = this.players.filter((p) => p.alive);
     const high = alive.some((p) => p.maxFloor >= FINAL_TRIGGER_FLOOR);
-    if (alive.length <= FINAL_ALIVE_THRESHOLD || this.time > MATCH_TIME_LIMIT * FINAL_PHASE_AT || high) {
+    const fieldNarrowed =
+      this.players.length > FINAL_ALIVE_THRESHOLD && alive.length <= FINAL_ALIVE_THRESHOLD;
+    if (fieldNarrowed || this.time > MATCH_TIME_LIMIT * FINAL_PHASE_AT || high) {
       this.phase = 'final';
       // Pace the kill plane to crest the summit exactly as the clock expires,
       // whether the collapse was triggered by the timer or by an early climber.

@@ -19,6 +19,7 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   sessions  Session[]
+  walletConnectionEvents WalletConnectionEvent[]
   account   CreditAccount?
   ledger    LedgerEntry[]
   leaderboard LeaderboardRow?
@@ -36,10 +37,25 @@ model Session {
   token     String   @unique
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
+  walletConnectionEvent WalletConnectionEvent?
 
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+model WalletConnectionEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  walletAddress String   @map("wallet_address")
+  eventType     String   @map("event_type")
+  sessionId     String   @unique @map("session_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  user          User     @relation(fields: [walletAddress], references: [id], onDelete: Cascade)
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([walletAddress, createdAt])
+  @@index([eventType, createdAt])
+  @@map("wallet_connection_events")
 }
 
 model AuthNonce {

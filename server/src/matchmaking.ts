@@ -6,6 +6,7 @@ import { TOWER_ENTRY_CREDITS, TOWER_MATCH_SIZE } from '../../shared/games.ts';
 import type { BombMatchResult, ClientMsg, ServerMsg } from '../../shared/protocol.ts';
 import type { TowerInput } from '../../shared/tower/types.ts';
 import { BombPartyEngine, type BombPartySeedPlayer } from '../../src/game/BombPartyEngine.ts';
+import { getBombMap } from '../../src/game/bombMaps.ts';
 import { settleMatch, getBalance, chargeMatchEntries, settleBombMatch } from './ledger.ts';
 import { getParty } from './parties.ts';
 import { houseCanSettle, settleEscrowAsHouse } from './escrowOracle.ts';
@@ -149,22 +150,26 @@ async function startBombMatch(
   const cap = Math.max(2, Math.min(20, opts.capacity || players.length));
   while (players.length < cap) players.push(bombBot(players.length));
   const id = randomUUID();
+  const seed = Math.floor(Math.random() * 1e9);
+  const map = getBombMap(seed, BOMB_ARENA.width, BOMB_ARENA.height);
   const engine = new BombPartyEngine(players, {
     arena: BOMB_ARENA,
-    startTimer: 8,
+    startTimer: 12,
     passTimeBonus: 0,
     humanId: players[0]?.id ?? 'host',
     countdownMs: 3000,
+    hazards: map.hazards,
+    mapId: map.id,
   });
   const sockets = new Map<string, Sock>();
   for (const s of humans) {
     if (s.userId) sockets.set(s.userId, s);
-    send(s, { type: 'match_start', matchId: id, seed: 0, you: s.userId!, game: 'bomb-party' });
+    send(s, { type: 'match_start', matchId: id, seed, you: s.userId!, game: 'bomb-party' });
   }
   const live: Extract<LiveMatch, { kind: 'bomb' }> = {
     kind: 'bomb',
     id,
-    seed: 0,
+    seed,
     engine,
     sockets,
     timer: setInterval(() => tickBomb(live), 1000 / BOMB_HZ),

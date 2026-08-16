@@ -404,4 +404,12 @@ describe('tower engine', () => {
     for (let i = 0; i < 60; i++) engine.step(1000 / 60);
     expect(engine.collapseY).toBeGreaterThan(before);
   });
+
+  it('does not immediately collapse a two-player tower', () => {
+    const fighters = [fighter(0, true), fighter(1)];
+    const engine = new TowerEngine({ seed: 3, matchId: 'two-player', fighters, practice: true });
+    for (let i = 0; i < 60 * 8; i++) engine.step(1000 / 60);
+    expect(engine.phase).toBe('live');
+    expect(engine.collapseY).toBe(-4);
+  });
 });

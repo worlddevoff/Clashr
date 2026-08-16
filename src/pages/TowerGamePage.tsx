@@ -15,6 +15,7 @@ import { loadPartyRoster } from '../lib/party';
 import { computeEscrowPool } from '../lib/escrow';
 import { useSolPots } from '../contexts/SolPotsContext';
 import type { PartyGameRoster } from '../types/party';
+import { INPUT_RATE_HZ } from '../../shared/tower/constants';
 
 const LOOK_SENSITIVITY = 0.0028;
 const KEY_TURN_SPEED = 3.4;
@@ -281,11 +282,9 @@ function TowerMatch({
     };
   }, [paused]);
 
-  const pump = useCallback(
-    (dt: number) => {
+  const pumpInput = useCallback(
+    () => {
       const k = keys.current;
-      camYaw.current += turn.current * KEY_TURN_SPEED * dt;
-
       const move = moveFromCamera(camYaw.current, k.ax, k.az);
       if (Math.hypot(move.x, move.z) > 0.05) facing.current = Math.atan2(move.x, move.z);
 
@@ -357,20 +356,27 @@ function TowerMatch({
     };
   }, [paused, eliminated, cycleSpectate]);
 
-  // Drive input from the render loop so it matches the display refresh rate
-  // instead of the old fixed 20 Hz poll, which lost quick taps.
+  // Keep camera rotation at display refresh rate while sending gameplay input
+  // at the server's 30 Hz input rate. Edge actions stay latched until sent.
   useEffect(() => {
     let raf = 0;
     let last = performance.now();
+    let lastInput = last - 1000 / INPUT_RATE_HZ;
     const loop = (t: number) => {
       const dt = Math.min(0.1, (t - last) / 1000);
       last = t;
-      if (!paused) pump(dt);
+      if (!paused) {
+        camYaw.current += turn.current * KEY_TURN_SPEED * dt;
+        if (t - lastInput >= 1000 / INPUT_RATE_HZ) {
+          lastInput = t;
+          pumpInput();
+        }
+      }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [pump, paused]);
+  }, [pumpInput, paused]);
 
   useEffect(() => {
     if (paused && document.pointerLockElement) document.exitPointerLock();

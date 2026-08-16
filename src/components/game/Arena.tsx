@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { EngineSnapshot } from '../../types/game';
+import { getBombMapTheme } from '../../game/bombMaps';
 import { cn } from '../../utils/cn';
 import { Character } from './Character';
 import { Explosion } from './Explosion';
@@ -27,6 +28,7 @@ export function Arena({ snap, humanId, arena, onPointerMove, className, suppress
   const ref = useRef<HTMLDivElement>(null);
   const [blasts, setBlasts] = useState<Blast[]>([]);
   const prevAliveRef = useRef<Set<string>>(new Set(snap.players.filter((p) => p.alive).map((p) => p.id)));
+  const theme = getBombMapTheme(snap.mapId);
 
   // detect eliminations to spawn a blast at the character's last position
   useEffect(() => {
@@ -63,17 +65,17 @@ export function Arena({ snap, humanId, arena, onPointerMove, className, suppress
         'relative mx-auto w-full touch-none overflow-hidden rounded-3xl border border-ink-600 bg-ink-900',
         className,
       )}
-      style={{ aspectRatio: `${arena.width} / ${arena.height}` }}
+      style={{ aspectRatio: `${arena.width} / ${arena.height}`, background: theme.surface }}
     >
       <motion.div
         className="absolute inset-0"
         animate={{ x: snap.shake ? (Math.random() - 0.5) * snap.shake : 0, y: snap.shake ? (Math.random() - 0.5) * snap.shake : 0 }}
         transition={{ duration: 0.05 }}
       >
-        <div className="absolute inset-0 bg-grid opacity-40" />
+        <div className="absolute inset-0 bg-grid" style={{ opacity: theme.gridOpacity }} />
         <div
           className="absolute inset-0"
-          style={{ background: 'radial-gradient(circle at 50% 50%, rgba(255,43,43,0.06), transparent 65%)' }}
+          style={{ background: theme.ambient }}
         />
 
         {/* scale layer maps engine coords -> element size (arena is fixed logical size) */}
@@ -89,10 +91,9 @@ export function Arena({ snap, humanId, arena, onPointerMove, className, suppress
                   top: h.y,
                   width: h.w,
                   height: h.h,
-                  background:
-                    'linear-gradient(135deg, rgba(120,210,255,0.22), rgba(34,229,255,0.08))',
-                  border: '1px solid rgba(34,229,255,0.35)',
-                  boxShadow: 'inset 0 0 24px rgba(180,240,255,0.15)',
+                  background: theme.ice,
+                  border: `1px solid ${theme.iceBorder}`,
+                  boxShadow: 'inset 0 0 24px rgba(255,255,255,0.12)',
                   zIndex: 1,
                 }}
               />
@@ -109,9 +110,8 @@ export function Arena({ snap, humanId, arena, onPointerMove, className, suppress
                   top: h.y,
                   width: h.w,
                   height: h.h,
-                  background:
-                    'linear-gradient(160deg, #1a1a2e 0%, #0d0d18 55%, #16162a 100%)',
-                  border: '2px solid rgba(255,255,255,0.12)',
+                  background: theme.block,
+                  border: `2px solid ${theme.blockBorder}`,
                   boxShadow: '0 8px 0 rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)',
                   zIndex: 4,
                 }}

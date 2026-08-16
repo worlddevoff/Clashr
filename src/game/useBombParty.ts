@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BombPartyEngine, TAUNTS, type BombPartySeedPlayer } from './BombPartyEngine';
 import type { ClientMsg } from '../../shared/protocol';
-import type { EngineSnapshot } from '../types/game';
+import type { ArenaHazard, EngineSnapshot } from '../types/game';
 import type { GameResult } from '../types/domain';
 import type { BombMatchResult } from '../../shared/protocol';
 import { connectTowerSocket } from '../lib/towerSocket';
@@ -11,6 +11,8 @@ interface Options {
   arena: { width: number; height: number };
   humanId: string;
   startTimer?: number;
+  hazards?: ArenaHazard[];
+  mapId?: string;
   /** When false, engine is not created (guest renders remote snapshots). */
   runLocal?: boolean;
   onExplosion?: () => void;
@@ -22,7 +24,9 @@ export function useBombParty({
   seed,
   arena,
   humanId,
-  startTimer = 8,
+  startTimer = 12,
+  hazards,
+  mapId,
   runLocal = true,
   onExplosion,
   onFinish,
@@ -44,6 +48,8 @@ export function useBombParty({
       startTimer,
       passTimeBonus: 0,
       humanId,
+      hazards,
+      mapId,
     });
   }
 

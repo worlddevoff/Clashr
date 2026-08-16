@@ -31,9 +31,8 @@ const REACTIONS = ['😱', '🥵', '😭', '🤪', '💀', '🙈', '😤'];
 /** Emojis the human can taunt with (number keys 1-6 + the on-screen bar). */
 export const TAUNTS = ['😂', '😎', '👋', '🤡', '🔥', '💀'];
 
-/** Opening fuse. Late game uses a shorter hold — 10s in a tiny box felt idle. */
-const HOLD_SECONDS = 8;
-const HOLD_SECONDS_MIN = 4.5;
+/** Every holder gets the same readable fuse, including two-player endgames. */
+const HOLD_SECONDS = 12;
 
 export const ZONE_GRACE_MS = 6000;
 export const ZONE_CLOSE_MS = 42000;
@@ -191,14 +190,7 @@ export class BombPartyEngine extends GameEngine {
   }
 
   private holdSeconds(): number {
-    const base = this.cfg.startTimer > 0 ? this.cfg.startTimer : HOLD_SECONDS;
-    const alive = this.players.filter((p) => p.alive).length;
-    const zoneT = Math.max(0, Math.min(1, (this.elapsed - ZONE_GRACE_MS) / ZONE_CLOSE_MS));
-    // Fuse tightens with the arena so endgame isn't a 10-second jog.
-    let hold = base - zoneT * (base - HOLD_SECONDS_MIN);
-    if (alive <= 3) hold = Math.min(hold, 5.5);
-    if (alive <= 2) hold = Math.min(hold, HOLD_SECONDS_MIN);
-    return Math.max(HOLD_SECONDS_MIN, hold);
+    return this.cfg.startTimer > 0 ? this.cfg.startTimer : HOLD_SECONDS;
   }
 
   private onIce(p: ArenaPlayer): boolean {
@@ -521,6 +513,7 @@ export class BombPartyEngine extends GameEngine {
       winner,
       safeZone: this.computeZone(),
       hazards: this.hazards,
+      mapId: this.cfg.mapId ?? 'neon-nexus',
     };
   }
 

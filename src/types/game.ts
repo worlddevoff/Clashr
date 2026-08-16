@@ -69,6 +69,8 @@ export interface EngineSnapshot {
   winner: ArenaPlayer | null;
   safeZone: SafeZone;
   hazards: ArenaHazard[];
+  /** Selected arena layout/theme. Sent with snapshots for network matches. */
+  mapId: string;
 }
 
 export interface EngineConfig {
@@ -77,6 +79,7 @@ export interface EngineConfig {
   passTimeBonus: number; // never; timer decays continuously
   humanId: PlayerId;
   hazards?: ArenaHazard[];
+  mapId?: string;
   /** Pre-game countdown in ms. 0 skips straight to live. Default 3000. */
   countdownMs?: number;
   /** If set, this player starts with the bomb. */

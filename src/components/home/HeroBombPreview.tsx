@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { PlayIcon, RadioIcon, SkullIcon, ZapIcon } from 'lucide-react';
 import { Arena } from '../game/Arena';
 import { BombPartyEngine, type BombPartySeedPlayer } from '../../game/BombPartyEngine';
+import { getBombMap } from '../../game/bombMaps';
 import { AVATARS, BOT_NAMES, NEON_COLORS } from '../../data/avatars';
 import type { EngineSnapshot } from '../../types/game';
 
@@ -52,6 +53,7 @@ export function HeroBombPreview() {
   useEffect(() => {
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const interactive = demoRun > 0;
+    const map = getBombMap(Math.floor(Math.random() * 1_000_000_000), ARENA.width, ARENA.height);
     const engine = new BombPartyEngine(makeSeed(interactive), {
       arena: ARENA,
       startTimer: 14,
@@ -59,6 +61,8 @@ export function HeroBombPreview() {
       humanId: PREVIEW_ID,
       countdownMs: 0,
       holderId: interactive ? PREVIEW_ID : undefined,
+      hazards: map.hazards,
+      mapId: map.id,
     });
     engineRef.current = engine;
     setSnap(engine.snapshot());

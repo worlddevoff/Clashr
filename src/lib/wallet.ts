@@ -40,6 +40,34 @@ export function getSolanaProvider(): SolanaProvider | null {
   return null;
 }
 
+/** Phantom injects after load; a new origin can take a tick before window.phantom exists. */
+export async function waitForSolanaProvider(ms = 2500): Promise<SolanaProvider | null> {
+  const existing = getSolanaProvider();
+  if (existing) return existing;
+  const deadline = Date.now() + ms;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (provider: SolanaProvider | null) => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('load', onLoad);
+      window.removeEventListener('phantom#initialized', onLoad);
+      resolve(provider);
+    };
+    const poll = () => {
+      if (done) return;
+      const provider = getSolanaProvider();
+      if (provider) return finish(provider);
+      if (Date.now() >= deadline) return finish(null);
+      window.setTimeout(poll, 80);
+    };
+    const onLoad = () => poll();
+    window.addEventListener('load', onLoad);
+    window.addEventListener('phantom#initialized', onLoad);
+    poll();
+  });
+}
+
 export function shortAddress(address: string): string {
   if (address.length < 10) return address;
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
@@ -51,7 +79,7 @@ export function normalizeAddress(address: string): string {
 }
 
 export async function connectSolana(): Promise<string> {
-  const provider = getSolanaProvider();
+  const provider = await waitForSolanaProvider();
   if (!provider) {
     throw new Error('No Solana wallet found. Install Phantom and try again.');
   }

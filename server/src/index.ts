@@ -30,6 +30,7 @@ import {
   refreshPotsReady,
   treasury,
 } from './escrowOracle.ts';
+import { proxySolanaRpc } from './solanaProxy.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3001);
@@ -124,6 +125,22 @@ app.get('/api/config', (_req, res) => {
     programId: programId().toBase58(),
     disclaimer: CREDITS_DISCLAIMER,
   });
+});
+
+app.post('/api/solana/rpc', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (tooMany(`sol:${user.id}`, 60, 60_000)) return res.status(429).json({ error: 'slow down' });
+  try {
+    const method = String(req.body?.method || '');
+    const params = Array.isArray(req.body?.params) ? req.body.params : [];
+    const result = await proxySolanaRpc(method, params);
+    res.json({ result });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'rpc failed';
+    if (/not allowed/i.test(message)) return res.status(400).json({ error: message });
+    res.status(502).json({ error: message });
+  }
 });
 
 app.get('/api/tower/economy', (_req, res) => {

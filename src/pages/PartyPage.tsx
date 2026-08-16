@@ -125,8 +125,15 @@ export function PartyPage() {
   const allStaked = !!party && party.members.every((m) => deposits.includes(m.id));
   const lobbyFull = !!party && seatsLeft === 0;
   const canStart = !potsOn || !realPot || (allStaked && !staking);
+  // Paid pots need a host click so Phantom can lock the escrow (no wallet popup from useEffect).
   const readyToAutoStart =
-    !!party && party.status === 'waiting' && lobbyFull && canStart && !starting && !startFailed;
+    !!party &&
+    party.status === 'waiting' &&
+    lobbyFull &&
+    canStart &&
+    !starting &&
+    !startFailed &&
+    !realPot;
 
   // Keep public lobby listing in sync (host only)
   useEffect(() => {
@@ -286,6 +293,27 @@ export function PartyPage() {
 
     const bootstrap = async () => {
       const self = selfFromUser();
+      const weAreProbablyHost = !!hostFromUrl && userId === hostFromUrl;
+      self.isHost = weAreProbablyHost;
+
+      if (weAreProbablyHost) {
+        const optimistic: Party = {
+          id: partyId,
+          gameSlug,
+          capacity,
+          entry: entryFromUrl,
+          hostId: hostFromUrl || userId,
+          createdAt: Date.now(),
+          status: 'waiting',
+          visibility: visibilityFromUrl,
+          members: [self],
+          escrowDeposits: [],
+          entryLamports: stakeFromUrl,
+        };
+        setParty(optimistic);
+        void publishPartyState(optimistic);
+      }
+
       const remote = await fetchParty(partyId);
       if (cancelled) return;
 
@@ -316,7 +344,7 @@ export function PartyPage() {
       initial = mergeMember(initial, self);
 
       if (weAreHost) {
-        await publishPartyState(initial);
+        void publishPartyState(initial);
       } else {
         const joined = await joinPartyState(partyId, self);
         if (cancelled) return;
@@ -350,14 +378,15 @@ export function PartyPage() {
       setParty(initial);
       const channel = openPartyChannel(partyId, (msg) => onWireRef.current(msg));
       channelRef.current = channel;
-      await channel.ready;
-      if (cancelled) {
-        channel.close();
-        return;
-      }
-      channel.post({ type: 'hello', member: self });
-      channel.post({ type: 'ping' });
-      if (self.isHost) channel.post({ type: 'sync', party: initial });
+      void channel.ready.then(() => {
+        if (cancelled) {
+          channel.close();
+          return;
+        }
+        channel.post({ type: 'hello', member: self });
+        channel.post({ type: 'ping' });
+        if (self.isHost) channel.post({ type: 'sync', party: initial });
+      });
     };
 
     void bootstrap();
@@ -481,28 +510,6 @@ export function PartyPage() {
       setStaking(false);
     }
   }, [party, user, potsOn, stakeLamports]);
-
-  useEffect(() => {
-    if (!potsOn || !party || !user || party.status !== 'waiting') return;
-    if (!seated || selfStaked || staking || stakeFailed) return;
-    if (party.hostId !== user.id && !party.escrowPda) return;
-    const key = `clashr:autostake:${party.id}:${user.id}`;
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, '1');
-    void stakeSelf();
-  }, [
-    potsOn,
-    party?.id,
-    party?.escrowPda,
-    party?.hostId,
-    party?.status,
-    user?.id,
-    seated,
-    selfStaked,
-    staking,
-    stakeFailed,
-    stakeSelf,
-  ]);
 
   const setMatchStake = (_sol: number) => {
     /* Stake is fixed when the lobby is created. */
@@ -720,8 +727,8 @@ export function PartyPage() {
           </h1>
           <p className="mt-1 text-sm text-white/55">
             {isPublic
-              ? 'Listed until the lobby fills. Stake happens when you sit — the match starts on its own when every seat is staked.'
-              : 'Invite friends with the link or code. Stake happens when you sit — the match starts when every seat is filled and staked.'}{' '}
+              ? 'Listed until the lobby fills. Approve stake in Phantom when you sit. Host starts when every seat is staked.'
+              : 'Invite friends with the link or code. Approve stake in Phantom when you sit. Host starts when every seat is filled and staked.'}{' '}
             You all play the <span className="text-neon-cyan">same match</span>.
             {potsOn
               ? ` ${formatSol(stakeSol)} SOL each. Empty seats can still be filled with bots if you start early.`
@@ -811,7 +818,7 @@ export function PartyPage() {
               valueSol={stakeSol}
               onChange={setMatchStake}
               disabled
-              hint={`${formatSol(stakeSol)} per wallet. Approve Phantom to sit. Match starts when the lobby is full.`}
+              hint={`${formatSol(stakeSol)} per wallet. Tap Approve stake in Phantom to sit. Host starts when the lobby is full.`}
             />
           </div>
           )}
@@ -896,8 +903,7 @@ export function PartyPage() {
 
           {isPublic && isHost && seatsLeft > 0 && (
             <div className="rounded-xl border border-neon-cyan/30 bg-neon-cyan/5 px-4 py-3 text-sm text-neon-cyan/90">
-              Waiting for players to join and stake. The match starts automatically when every seat
-              is filled. You can still start early with bots.
+              Waiting for players to join and stake. Tap Start when every wallet has staked — or start early with bots.
             </div>
           )}
           {lobbyFull && (

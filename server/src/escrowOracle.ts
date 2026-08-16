@@ -63,11 +63,13 @@ export function clusterName(): string {
 }
 
 export function rpcUrl(): string {
+  const custom = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC;
+  if (custom && !/api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(custom)) {
+    return custom;
+  }
   return (
-    process.env.SOLANA_RPC ||
-    process.env.VITE_SOLANA_RPC ||
     (clusterName() === 'devnet'
-      ? 'https://api.devnet.solana.com'
+      ? 'https://solana-devnet.api.onfinality.io/public'
       : clusterName() === 'testnet'
         ? 'https://api.testnet.solana.com'
         : 'https://solana-rpc.publicnode.com')

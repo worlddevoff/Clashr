@@ -66,7 +66,10 @@ const MATCH_SIZE = 794;
 const MAGIC = 'ARCESC02';
 
 export function getEscrowProgramId(): PublicKey {
-  const id = import.meta.env.VITE_ESCROW_PROGRAM_ID?.trim() || DEFAULT_ESCROW_PROGRAM_ID;
+  const id =
+    getSolPotsConfig().programId?.trim() ||
+    import.meta.env.VITE_ESCROW_PROGRAM_ID?.trim() ||
+    DEFAULT_ESCROW_PROGRAM_ID;
   return new PublicKey(id);
 }
 
@@ -200,31 +203,37 @@ export async function createAndJoinEscrow(
   entryLamports: number = ENTRY_LAMPORTS,
 ): Promise<{ pda: string; signature: string }> {
   try {
-    const existing = await fetchEscrow(partyId);
+    await refreshSolPots();
     const host = payer();
     const [pda] = matchPda(partyId);
-    if (existing) {
-      if (!existing.players.includes(host.toBase58())) {
-        const sig = await joinEscrow(partyId);
-        return { pda: pda.toBase58(), signature: sig };
-      }
-      return { pda: pda.toBase58(), signature: '' };
-    }
-
     const { treasury, oracle } = await feeAndOracle();
-    const signature = await sendWalletInstructions((blockhash) =>
-      new Transaction({ feePayer: host, recentBlockhash: blockhash }).add(
-        ix(buildCreateData(partyId, capacity, entryLamports), [
-          { pubkey: host, isSigner: true, isWritable: true },
-          { pubkey: pda, isSigner: false, isWritable: true },
-          { pubkey: treasury, isSigner: false, isWritable: false },
-          { pubkey: oracle, isSigner: false, isWritable: false },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-        ]),
-        joinIx(host, pda),
-      ),
-    );
-    return { pda: pda.toBase58(), signature };
+    try {
+      const signature = await sendWalletInstructions((blockhash) =>
+        new Transaction({ feePayer: host, recentBlockhash: blockhash }).add(
+          ix(buildCreateData(partyId, capacity, entryLamports), [
+            { pubkey: host, isSigner: true, isWritable: true },
+            { pubkey: pda, isSigner: false, isWritable: true },
+            { pubkey: treasury, isSigner: false, isWritable: false },
+            { pubkey: oracle, isSigner: false, isWritable: false },
+            { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+          ]),
+          joinIx(host, pda),
+        ),
+      );
+      return { pda: pda.toBase58(), signature };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/User rejected|rejected|cancel|insufficient|0x1|rate limit|429|slow down/i.test(msg)) throw e;
+      const existing = await fetchEscrow(partyId);
+      if (existing) {
+        if (!existing.players.includes(host.toBase58())) {
+          const sig = await joinEscrow(partyId);
+          return { pda: pda.toBase58(), signature: sig };
+        }
+        return { pda: pda.toBase58(), signature: '' };
+      }
+      throw e;
+    }
   } catch (e) {
     throw new Error(friendlyRpcError(e));
   }
@@ -232,6 +241,7 @@ export async function createAndJoinEscrow(
 
 export async function joinEscrow(partyId: string): Promise<string> {
   try {
+    await refreshSolPots();
     const player = payer();
     const [pda] = matchPda(partyId);
     const existing = await fetchEscrow(partyId);
@@ -265,6 +275,7 @@ export async function withdrawEscrow(partyId: string): Promise<string> {
 
 export async function lockEscrow(partyId: string): Promise<string> {
   try {
+    await refreshSolPots();
     const host = payer();
     const [pda] = matchPda(partyId);
     return await sendWalletInstructions((blockhash) =>

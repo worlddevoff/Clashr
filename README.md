@@ -44,7 +44,7 @@ One service runs the website, `/api`, and `/ws`. Do not put the match server on 
 
 `PORT` is set by Railway. Same-origin play does not need `CORS_ORIGINS`.
 
-- **SOL pots** turn on when `HOUSE_SECRET_KEY` (house oracle signer) is set **and** `solana/arcade-escrow` is deployed on the cluster in `VITE_SOLANA_CLUSTER` (start on **devnet**). The SPA reads `/api/config` — do not set `VITE_ENABLE_SOL_POTS`. Set `TREASURY_WALLET` / `VITE_TREASURY_WALLET` to the public fee-receive address (5% + bot-win pots). That address does **not** need to match the oracle. Also set `ESCROW_PROGRAM_ID` / `VITE_ESCROW_PROGRAM_ID`.
+- **SOL pots** turn on when `HOUSE_SECRET_KEY` (house oracle signer) is set **and** `solana/arcade-escrow` is deployed on the cluster in `VITE_SOLANA_CLUSTER` (start on **devnet**). The SPA reads `/api/config` — do not set `VITE_ENABLE_SOL_POTS`. Set `TREASURY_WALLET` / `VITE_TREASURY_WALLET` to the public fee-receive address (5% + bot-win pots). That address does **not** need to match the oracle. Also set `ESCROW_PROGRAM_ID` / `VITE_ESCROW_PROGRAM_ID`. Optional `SOLANA_RPC` (Node only, never `VITE_*`) is used by `POST /api/solana/rpc` so wallets never hit public Devnet from the browser.
 - Smoke-test two wallets on devnet (create party → both deposit → play → winner paid, host cannot settle) before mainnet.
 - Party create/join/start goes through session-authenticated `/api/parties`.
 - Terms, privacy, and an 18+ gate live at `/terms`, `/privacy`, `/responsible-play`.

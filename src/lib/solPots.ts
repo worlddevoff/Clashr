@@ -42,7 +42,9 @@ export function subscribeSolPots(cb: () => void): () => void {
 
 export async function refreshSolPots(): Promise<SolPotsConfig> {
   try {
-    const next = await apiJson<SolPotsConfig>('/api/config');
+    const next = await apiJson<SolPotsConfig>('/api/config', {
+      signal: AbortSignal.timeout(5000),
+    });
     cached = {
       solPots: !!next.solPots,
       cluster: next.cluster || cached.cluster,
@@ -52,7 +54,11 @@ export async function refreshSolPots(): Promise<SolPotsConfig> {
       reason: next.reason || (next.solPots ? 'ok' : 'unavailable'),
     };
   } catch {
-    cached = { ...cached, solPots: false, reason: 'config_unreachable' };
+    cached = {
+      ...cached,
+      solPots: cached.solPots || !!cached.programId,
+      reason: 'config_unreachable',
+    };
   }
   emit();
   return cached;

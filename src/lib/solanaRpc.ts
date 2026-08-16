@@ -1,18 +1,18 @@
-import { getSolanaRpcFallbacks } from './solanaConfig';
 import { getSolanaProvider } from './wallet';
+import { apiJson } from './api';
 import { Transaction } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-
-/** RPC used for the last getLatestBlockhash — send the signed tx to the same node. */
-let stickyRpc: string | null = null;
 
 export function friendlyRpcError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   if (/Attempt to load a program that does not exist|incorrect program id|Invalid program id/i.test(msg)) {
-    return 'Match escrow program is not deployed on this cluster yet.';
+    return 'Escrow program is on Solana Devnet. Sign in Phantom, then we submit the stake on Devnet — do not switch Phantom to Mainnet and resend.';
+  }
+  if (/slow down/i.test(msg)) {
+    return 'Too many stake attempts. Wait a minute, then tap Retry stake once.';
   }
   if (/rate limit|429/i.test(msg)) {
-    return 'Solana is rate-limiting this connection. Wait 20 seconds, then tap Retry stake once.';
+    return 'Solana RPC is busy. Tap Retry stake once — do not spam the button.';
   }
   if (/unauthorized|api key|authenticate your request/i.test(msg)) {
     return 'Could not reach Solana. Tap Retry stake.';
@@ -37,60 +37,16 @@ function isBlockhashError(err: unknown): boolean {
 }
 
 function isRateLimit(err: unknown): boolean {
-  return /429|rate limit/i.test(err instanceof Error ? err.message : String(err));
+  return /429|rate limit|slow down/i.test(err instanceof Error ? err.message : String(err));
 }
 
-function isDeadRpc(err: unknown): boolean {
-  return /unauthorized|api key|authenticate your request|not available on free plan|\b401\b|\b403\b|forbidden|failed to fetch|network/i.test(
-    err instanceof Error ? err.message : String(err),
-  );
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => window.setTimeout(r, ms));
-}
-
-async function rpcAt<T>(url: string, method: string, params: unknown[]): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  });
-  const json = (await res.json()) as { result?: T; error?: { message?: string; code?: number } };
-  if (!res.ok || json.error) {
-    throw new Error(json.error?.message ?? `${res.status} ${res.statusText}`);
-  }
-  if (json.result === undefined) {
-    throw new Error('Empty RPC result');
-  }
-  return json.result;
-}
-
+/** Browser never talks to public Solana RPCs — Node forwards allowlisted methods. */
 export async function rpc<T>(method: string, params: unknown[]): Promise<T> {
-  const urls =
-    method === 'sendTransaction' && stickyRpc
-      ? [stickyRpc]
-      : stickyRpc
-        ? [stickyRpc, ...getSolanaRpcFallbacks().filter((u) => u !== stickyRpc)]
-        : getSolanaRpcFallbacks();
-  let last = 'All Solana RPCs failed.';
-  for (const url of urls) {
-    if (url.includes('ankr.com') && !/[?&](api[_-]?key|apikey)=/i.test(url)) continue;
-    try {
-      const result = await rpcAt<T>(url, method, params);
-      stickyRpc = url;
-      return result;
-    } catch (e) {
-      last = e instanceof Error ? e.message : String(e);
-      if (method === 'sendTransaction' && isBlockhashError(e)) throw e;
-      if (isDeadRpc(e) || isRateLimit(e)) {
-        if (stickyRpc === url) stickyRpc = null;
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw new Error(last);
+  const data = await apiJson<{ result: T }>('/api/solana/rpc', {
+    method: 'POST',
+    body: JSON.stringify({ method, params }),
+  });
+  return data.result;
 }
 
 export async function latestBlockhash(): Promise<string> {
@@ -105,47 +61,23 @@ export async function sendSignedTransaction(tx: Transaction): Promise<string> {
   if (!provider?.publicKey) {
     throw new Error('Connect your Solana wallet.');
   }
-
-  let signature: string;
-  // Prefer the wallet's own RPC so public Devnet nodes are not hammered.
-  if (provider.signAndSendTransaction) {
-    const sent = await provider.signAndSendTransaction(tx);
-    signature = sent.signature;
-  } else if (provider.signTransaction) {
-    const signed = (await provider.signTransaction(tx)) as Transaction;
-    const raw = signed.serialize();
-    const b64 =
-      typeof Buffer !== 'undefined'
-        ? Buffer.from(raw).toString('base64')
-        : btoa(String.fromCharCode(...raw));
-    signature = await rpc<string>('sendTransaction', [
-      b64,
-      { encoding: 'base64', skipPreflight: false, maxRetries: 5, preflightCommitment: 'confirmed' },
-    ]);
-  } else {
-    throw new Error('This wallet cannot send transactions. Try Phantom.');
+  if (!provider.signTransaction) {
+    throw new Error('This wallet cannot sign transactions. Try Phantom.');
   }
 
-  for (let i = 0; i < 12; i++) {
-    try {
-      const st = await rpc<{ value: Array<{ err: unknown; confirmationStatus?: string } | null> }>(
-        'getSignatureStatuses',
-        [[signature], { searchTransactionHistory: true }],
-      );
-      const info = st.value[0];
-      if (info?.err) {
-        throw new Error('Transaction failed on Solana.');
-      }
-      if (info?.confirmationStatus === 'confirmed' || info?.confirmationStatus === 'finalized') {
-        return signature;
-      }
-    } catch (err) {
-      if (isRateLimit(err)) return signature;
-      throw err;
-    }
-    await sleep(1000);
-  }
-  return signature;
+  // Sign locally, then broadcast through the match server on Devnet. Phantom's
+  // signAndSendTransaction uses whatever network the extension is on (usually
+  // Mainnet), which makes Devnet pots look like they "don't exist".
+  const signed = (await provider.signTransaction(tx)) as Transaction;
+  const raw = signed.serialize();
+  const b64 =
+    typeof Buffer !== 'undefined'
+      ? Buffer.from(raw).toString('base64')
+      : btoa(String.fromCharCode(...raw));
+  return rpc<string>('sendTransaction', [
+    b64,
+    { encoding: 'base64', skipPreflight: true, maxRetries: 0 },
+  ]);
 }
 
 /** Rebuild + resign if Phantom sat on an expired blockhash. */

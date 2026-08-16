@@ -43,6 +43,7 @@ export function PlayPage() {
   const [stakeSol, setStakeSol] = useState(loadLastStakeSol);
   const [joinCode, setJoinCode] = useState('');
   const [publicParties, setPublicParties] = useState<PublicPartyListing[]>([]);
+  const [creating, setCreating] = useState(false);
 
   useEffect(
     () =>
@@ -61,32 +62,38 @@ export function PlayPage() {
 
   const potsOn = useSolPots();
 
-  const createBombParty = (visibility: PartyVisibility, capacity = createCap) => {
+  const createBombParty = async (visibility: PartyVisibility, capacity = createCap) => {
     if (!user) {
       setError('Connect a wallet to create a party.');
       return;
     }
     setError(null);
-    const entryLamports = potsOn ? clampStakeLamports(solToLamports(stakeSol)) : undefined;
-    if (potsOn) saveLastStakeSol(stakeSol);
-    const party = createParty({
-      gameSlug: 'bomb-party',
-      capacity,
-      visibility,
-      entryLamports,
-      host: {
-        id: user.id,
-        username: user.username,
-        avatar: user.avatar,
-        color: user.color,
-      },
-    });
-    const stakeQ = entryLamports ? `&stake=${entryLamports}` : '';
-    void publishPartyState(party).then(() => {
+    setCreating(true);
+    try {
+      const entryLamports = potsOn ? clampStakeLamports(solToLamports(stakeSol)) : undefined;
+      if (potsOn) saveLastStakeSol(stakeSol);
+      const party = createParty({
+        gameSlug: 'bomb-party',
+        capacity,
+        visibility,
+        entryLamports,
+        host: {
+          id: user.id,
+          username: user.username,
+          avatar: user.avatar,
+          color: user.color,
+        },
+      });
+      void publishPartyState(party);
+      const stakeQ = entryLamports ? `&stake=${entryLamports}` : '';
       navigate(
         `/party/${party.id}?game=bomb-party&cap=${party.capacity}&host=${encodeURIComponent(party.hostId)}&vis=${visibility}${stakeQ}`,
       );
-    });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not create this lobby.');
+    } finally {
+      setCreating(false);
+    }
   };
 
   const joinPublic = (listing: PublicPartyListing) => {
@@ -193,10 +200,10 @@ export function PlayPage() {
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Button size="lg" disabled={!user} onClick={() => createBombParty('public')}>
-              <GlobeIcon className="h-5 w-5" /> Create public lobby
+            <Button size="lg" disabled={!user || creating} onClick={() => void createBombParty('public')}>
+              <GlobeIcon className="h-5 w-5" /> {creating ? 'Opening lobby…' : 'Create public lobby'}
             </Button>
-            <Button size="lg" variant="secondary" disabled={!user} onClick={() => createBombParty('private')}>
+            <Button size="lg" variant="secondary" disabled={!user || creating} onClick={() => void createBombParty('private')}>
               <LockIcon className="h-5 w-5" /> Create private lobby
             </Button>
           </div>

@@ -81,7 +81,10 @@ export async function createParty(opts: {
 }): Promise<Party> {
   const id = (opts.id || code()).toUpperCase();
   const existing = await prisma.party.findUnique({ where: { id } });
-  if (existing && existing.hostId !== opts.hostId && existing.status === 'waiting') {
+  if (existing && existing.status !== 'waiting') {
+    throw new Error('party closed');
+  }
+  if (existing && existing.hostId !== opts.hostId) {
     throw new Error('party code in use');
   }
   const gameSlug = opts.gameSlug === 'tower' ? 'tower' : 'bomb-party';
@@ -113,7 +116,6 @@ export async function createParty(opts: {
       entry: Math.max(0, opts.entry),
       entryLamports: opts.entryLamports != null ? BigInt(Math.round(opts.entryLamports)) : null,
       visibility: opts.visibility === 'public' ? 'public' : 'private',
-      status: 'waiting',
       gamePath: null,
       updatedAt: new Date(),
       ...(opts.escrowPda ? { escrowPda: opts.escrowPda } : {}),
@@ -139,7 +141,24 @@ export async function createParty(opts: {
     },
   });
   const full = await loadParty(id);
+  if (opts.visibility === 'public') await closeEmptyPublicLobbies(opts.hostId, id);
   return toParty(full ?? row);
+}
+
+async function closeEmptyPublicLobbies(hostId: string, exceptId?: string): Promise<void> {
+  const open = await prisma.party.findMany({
+    where: {
+      hostId,
+      status: 'waiting',
+      visibility: 'public',
+      ...(exceptId ? { id: { not: exceptId.toUpperCase() } } : {}),
+    },
+    include: { members: true },
+  });
+  const ids = open.filter((p) => p.members.length <= 1).map((p) => p.id);
+  if (!ids.length) return;
+  await prisma.party.updateMany({ where: { id: { in: ids } }, data: { status: 'closed' } });
+  await prisma.partyMember.deleteMany({ where: { partyId: { in: ids } } });
 }
 
 export async function joinParty(
@@ -183,6 +202,7 @@ export async function leaveParty(partyId: string, userId: string): Promise<void>
     if (room.status === 'waiting') {
       await prisma.party.update({ where: { id }, data: { status: 'closed' } });
       await prisma.partyMember.deleteMany({ where: { partyId: id } });
+      await closeEmptyPublicLobbies(userId);
     }
     return;
   }
@@ -242,6 +262,7 @@ export async function getParty(partyId: string): Promise<Party | null> {
 
 export async function listPublicParties() {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+  const hostOnlyCutoff = new Date(Date.now() - 2 * 60 * 1000);
   const rows = await prisma.party.findMany({
     where: { visibility: 'public', status: 'waiting', updatedAt: { gt: cutoff } },
     include: { members: true },
@@ -249,7 +270,11 @@ export async function listPublicParties() {
     take: 50,
   });
   return rows
-    .filter((p) => p.members.length > 0 && p.members.length < p.capacity)
+    .filter((p) => {
+      if (p.members.length === 0 || p.members.length >= p.capacity) return false;
+      if (p.members.length === 1 && p.updatedAt < hostOnlyCutoff) return false;
+      return true;
+    })
     .map((p) => {
       const host = p.members.find((m) => m.isHost);
       return {

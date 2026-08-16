@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { WalletIcon, LoaderCircleIcon } from 'lucide-react';
@@ -11,10 +12,13 @@ export function AuthGate({ onAuth }: { onAuth: () => void }) {
   const { connectWallet, connecting } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [error, setError] = useState<string | null>(null);
 
   const onConnect = async () => {
+    setError(null);
     const res = await connectWallet();
     if (!res.ok) {
+      setError(res.message);
       onAuth();
       return;
     }
@@ -58,6 +62,7 @@ export function AuthGate({ onAuth }: { onAuth: () => void }) {
           Back to home
         </Button>
       </div>
+      {error ? <p className="relative mt-4 max-w-md text-sm text-neon-magenta">{error}</p> : null}
       <p className="relative mt-6 text-[11px] uppercase tracking-widest text-white/25">
         Browse free · Wallet required to play
       </p>

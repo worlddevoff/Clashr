@@ -19,6 +19,7 @@ import {
   normalizeAddress,
   shortAddress,
   signArcadeMessage,
+  walletErrorMessage,
   type SolanaPublicKey,
 } from '../lib/wallet';
 
@@ -154,8 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setNeedsProfileSetup(out.isNew);
       return { ok: true, isNew: out.isNew };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Wallet connection failed.';
-      return { ok: false, message };
+      return { ok: false, message: walletErrorMessage(err) };
     } finally {
       setConnecting(false);
     }

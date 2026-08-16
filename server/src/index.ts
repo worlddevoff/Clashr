@@ -289,7 +289,7 @@ app.get('/api/tower/match/:id', async (req, res) => {
 
 app.get('/api/parties', async (req, res) => {
   const ip = req.ip || 'x';
-  if (tooMany(`plist:${ip}`, 60, 60_000)) return res.status(429).json({ error: 'slow down' });
+  if (tooMany(`plist:${ip}`, 180, 60_000)) return res.status(429).json({ error: 'slow down' });
   const parties = await listPublicParties();
   res.json({ parties });
 });

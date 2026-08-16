@@ -40,7 +40,17 @@ export function getSolanaProvider(): SolanaProvider | null {
   return null;
 }
 
-/** Phantom injects after load; a new origin can take a tick before window.phantom exists. */
+/** Phantom often throws a plain `{ message }` instead of Error. */
+export function walletErrorMessage(err: unknown, fallback = 'Wallet connection failed.'): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string' && err.trim()) return err;
+  if (err && typeof err === 'object' && 'message' in err) {
+    const message = (err as { message: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
+
 export async function waitForSolanaProvider(ms = 2500): Promise<SolanaProvider | null> {
   const existing = getSolanaProvider();
   if (existing) return existing;
@@ -68,6 +78,16 @@ export async function waitForSolanaProvider(ms = 2500): Promise<SolanaProvider |
   });
 }
 
+function isMobileBrowser(): boolean {
+  return /iphone|ipad|ipod|android|mobile/i.test(navigator.userAgent);
+}
+
+function openInPhantomBrowser(): void {
+  const url = encodeURIComponent(window.location.href);
+  const ref = encodeURIComponent(window.location.origin);
+  window.location.href = `https://phantom.app/ul/browse/${url}?ref=${ref}`;
+}
+
 export function shortAddress(address: string): string {
   if (address.length < 10) return address;
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
@@ -81,12 +101,26 @@ export function normalizeAddress(address: string): string {
 export async function connectSolana(): Promise<string> {
   const provider = await waitForSolanaProvider();
   if (!provider) {
-    throw new Error('No Solana wallet found. Install Phantom and try again.');
+    if (isMobileBrowser()) {
+      openInPhantomBrowser();
+      throw new Error('Opening in Phantom. After it loads, tap Connect wallet again.');
+    }
+    throw new Error('Phantom not detected on this tab. Click the Phantom extension icon, then try again.');
   }
-  const res = await provider.connect();
-  const address = res.publicKey?.toString() ?? provider.publicKey?.toString();
-  if (!address) throw new Error('Wallet connection was cancelled.');
-  return address;
+  try {
+    const res = await provider.connect();
+    const address = res.publicKey?.toString() ?? provider.publicKey?.toString();
+    if (!address) throw new Error('Wallet connection was cancelled.');
+    return address;
+  } catch (err) {
+    const message = walletErrorMessage(err, 'Wallet connection was cancelled.');
+    if (/reject|denied|cancel/i.test(message)) {
+      throw new Error(
+        'Phantom rejected this site. It may show a “new domain” warning for www.clashr.fun — approve that, then connect again.',
+      );
+    }
+    throw new Error(message);
+  }
 }
 
 export async function getConnectedAddress(): Promise<string | null> {

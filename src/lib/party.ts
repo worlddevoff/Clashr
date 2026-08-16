@@ -233,11 +233,16 @@ export function subscribePublicParties(onChange: (list: PublicPartyListing[]) =>
   let stopped = false;
   const emitLocal = () => onChange(listPublicParties());
 
+  let sawRemote = false;
   const pull = () => {
     void fetchPublicParties().then((remote) => {
       if (stopped) return;
-      if (remote) onChange(remote);
-      else emitLocal();
+      if (remote) {
+        sawRemote = true;
+        onChange(remote);
+        return;
+      }
+      if (!sawRemote) emitLocal();
     });
   };
 
@@ -254,7 +259,7 @@ export function subscribePublicParties(onChange: (list: PublicPartyListing[]) =>
     /* ignore */
   }
 
-  const poll = window.setInterval(pull, 2000);
+  const poll = window.setInterval(pull, 4000);
   return () => {
     stopped = true;
     window.removeEventListener('storage', onStorage);

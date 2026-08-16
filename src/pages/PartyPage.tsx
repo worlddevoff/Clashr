@@ -32,6 +32,7 @@ import {
   fetchParty,
   joinPartyState,
   leavePartyState,
+  leavePartyKeepalive,
   publishPartyState,
   reportPartyDeposit,
   startPartyState,
@@ -93,11 +94,14 @@ export function PartyPage() {
   const [staking, setStaking] = useState(false);
   const [stakeFailed, setStakeFailed] = useState(false);
   const [startFailed, setStartFailed] = useState(false);
+  const [autoStartSeconds, setAutoStartSeconds] = useState(60);
 
   const partyRef = useRef<Party | null>(null);
   const channelRef = useRef<ReturnType<typeof openPartyChannel> | null>(null);
   const onWireRef = useRef<(msg: PartyWireMessage) => void>(() => undefined);
+  const stakeSelfRef = useRef<() => Promise<void>>(async () => undefined);
   const startRef = useRef<() => Promise<void>>(async () => undefined);
+  const paidAutoStartDeadlineRef = useRef<number | null>(null);
   const selfId = user?.id ?? '';
 
   useEffect(() => {
@@ -134,6 +138,8 @@ export function PartyPage() {
     !starting &&
     !startFailed &&
     !realPot;
+  const paidAutoStartReady =
+    isHost && party?.status === 'waiting' && lobbyFull && realPot && allStaked;
 
   // Keep public lobby listing in sync (host only)
   useEffect(() => {
@@ -400,7 +406,12 @@ export function PartyPage() {
   useEffect(() => {
     if (!isAuthed || !user || !partyId) return;
     const userId = user.id;
+    const onPageHide = () => {
+      if (partyRef.current?.status === 'waiting') leavePartyKeepalive(partyId);
+    };
+    window.addEventListener('pagehide', onPageHide);
     return () => {
+      window.removeEventListener('pagehide', onPageHide);
       const current = partyRef.current;
       if (current?.status === 'waiting' && current.hostId !== userId) {
         void leavePartyState(partyId, userId);
@@ -510,6 +521,37 @@ export function PartyPage() {
       setStaking(false);
     }
   }, [party, user, potsOn, stakeLamports]);
+  stakeSelfRef.current = stakeSelf;
+
+  useEffect(() => {
+    if (
+      !party ||
+      !user ||
+      !potsOn ||
+      party.status !== 'waiting' ||
+      !seated ||
+      selfStaked ||
+      staking ||
+      stakeFailed ||
+      (!isHost && !party.escrowPda)
+    ) {
+      return;
+    }
+
+    const key = `clashr:autostake:${party.id}:${user.id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    void stakeSelfRef.current();
+  }, [
+    party,
+    user,
+    potsOn,
+    seated,
+    selfStaked,
+    staking,
+    stakeFailed,
+    isHost,
+  ]);
 
   const setMatchStake = (_sol: number) => {
     /* Stake is fixed when the lobby is created. */
@@ -548,17 +590,21 @@ export function PartyPage() {
     const current = partyRef.current;
     if (user) {
       channelRef.current?.post({ type: 'leave', memberId: user.id });
-      void leavePartyState(partyId, user.id);
       sessionStorage.removeItem(`clashr:autostake:${partyId}:${user.id}`);
     }
     if (isHost && party) {
       removePublicParty(party.id);
       sessionStorage.removeItem(`clashr:autostart:${party.id}`);
+      sessionStorage.removeItem(`clashr:autostart-paid:${party.id}`);
     }
     if (current?.status === 'waiting' && selfStaked) {
       void withdrawEscrow(current.id).catch(() => undefined);
     }
-    navigate(gameSlug === 'tower' ? '/play/tower' : '/play/bomb-party');
+    const dest = gameSlug === 'tower' ? '/play/tower' : '/play/bomb-party';
+    void (async () => {
+      if (user) await leavePartyState(partyId, user.id);
+      navigate(dest);
+    })();
   };
 
   const start = async () => {
@@ -615,6 +661,33 @@ export function PartyPage() {
     sessionStorage.setItem(key, '1');
     void startRef.current();
   }, [isHost, readyToAutoStart, party?.id]);
+
+  useEffect(() => {
+    if (!paidAutoStartReady || starting) {
+      paidAutoStartDeadlineRef.current = null;
+      setAutoStartSeconds(60);
+      return;
+    }
+
+    const key = `clashr:autostart-paid:${partyId}`;
+    if (sessionStorage.getItem(key)) return;
+    paidAutoStartDeadlineRef.current ??= Date.now() + 60_000;
+
+    const tick = () => {
+      const deadline = paidAutoStartDeadlineRef.current;
+      if (!deadline) return;
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setAutoStartSeconds(remaining);
+      if (remaining > 0) return;
+      sessionStorage.setItem(key, '1');
+      paidAutoStartDeadlineRef.current = null;
+      void startRef.current();
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [paidAutoStartReady, partyId, starting]);
 
   if (!isAuthed || !user) {
     return (
@@ -773,6 +846,25 @@ export function PartyPage() {
                 <UsersIcon className="h-4 w-4" />
                 {party?.members.length ?? 1}/{party?.capacity ?? '—'}
               </div>
+              {party && party.members.length > 1 && (
+                <div className="mt-2 flex max-w-xs flex-wrap justify-end gap-1.5">
+                  {party.members.map((member) => (
+                    <span
+                      key={member.id}
+                      className="inline-flex max-w-36 items-center gap-1.5 rounded-full border border-ink-600 bg-ink-800/90 px-2 py-1 text-[10px] text-white/70"
+                      title={member.username}
+                    >
+                      <span aria-hidden>{member.avatar}</span>
+                      <span className="truncate">{member.username}</span>
+                      {deposits.includes(member.id) && (
+                        <span className="font-display text-[8px] uppercase tracking-wide text-neon-lime">
+                          Staked
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
               {potsOn && realPot && pool.prizePool > 0 ? (
                 <div className="mt-1 font-display text-sm text-neon-lime">
                   Pot {formatSol(pool.prizePool)} · {formatSol(stakeSol)} each
@@ -789,6 +881,30 @@ export function PartyPage() {
         </div>
 
         <div className="space-y-5 p-5">
+          {isHost && lobbyFull && potsOn && allStaked && (
+            <div className="flex flex-col gap-3 rounded-2xl border border-neon-lime/40 bg-neon-lime/10 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="font-display text-sm uppercase tracking-wide text-neon-lime">
+                  Everyone is here and staked
+                </div>
+                <div className="mt-1 text-sm text-white/60">
+                  {starting
+                    ? 'Starting the match…'
+                    : `Start now or it will start automatically in ${Math.floor(autoStartSeconds / 60)}:${String(autoStartSeconds % 60).padStart(2, '0')}.`}
+                </div>
+              </div>
+              <Button
+                size="lg"
+                className="shrink-0"
+                disabled={starting}
+                onClick={() => void start()}
+              >
+                <PlayIcon className="h-5 w-5" />
+                {starting ? 'Starting…' : 'Start match'}
+              </Button>
+            </div>
+          )}
+
           <div className="rounded-2xl border border-neon-cyan/25 bg-ink-900/60 p-4">
             <div className="mb-2 font-display text-[11px] uppercase tracking-widest text-neon-cyan">
               {isPublic ? 'Share or find in lobby' : 'Invite friends'}
@@ -912,7 +1028,9 @@ export function PartyPage() {
                 ? 'Lobby full — starting as soon as every wallet has staked.'
                 : starting || readyToAutoStart
                   ? 'Lobby full and staked — starting the match.'
-                  : 'Lobby full and staked.'}
+                  : isHost
+                    ? `Lobby full and staked — starts automatically in ${Math.floor(autoStartSeconds / 60)}:${String(autoStartSeconds % 60).padStart(2, '0')}.`
+                    : 'Lobby full and staked — the host can start now, or it will start automatically.'}
             </div>
           )}
 
@@ -973,7 +1091,7 @@ export function PartyPage() {
                         ? 'Start match'
                         : potsOn && !allStaked
                           ? 'Waiting for stakes…'
-                          : 'Starting match…'}
+                          : 'Start match'}
                 </Button>
               )
             ) : party.members.some((m) => m.id === selfId) ? (
@@ -982,7 +1100,7 @@ export function PartyPage() {
                   ? 'Waiting for the lobby to fill — match starts automatically.'
                   : potsOn && !allStaked
                     ? 'Lobby full — waiting for every wallet to stake.'
-                    : 'Lobby full — match starting.'}
+                    : 'Lobby full and staked — waiting for the host to start.'}
               </div>
             ) : (
               <Button

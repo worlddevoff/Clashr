@@ -1,4 +1,5 @@
-import { apiJson } from './api';
+import { apiJson, apiUrl } from './api';
+import { getSessionToken } from './session';
 import type { Party, PartyMember, PublicPartyListing } from '../types/party';
 import { isGameSlug, type GameSlug } from '../../shared/games';
 
@@ -153,6 +154,7 @@ export async function fetchParty(partyId: string): Promise<Party | null> {
 }
 
 export async function publishPartyState(party: Party): Promise<void> {
+  if (party.status !== 'waiting') return;
   try {
     await apiJson('/api/parties', {
       method: 'POST',
@@ -197,6 +199,18 @@ export async function leavePartyState(partyId: string, _userId?: string): Promis
   } catch (err) {
     console.warn('leave_party', err instanceof Error ? err.message : err);
   }
+}
+
+export function leavePartyKeepalive(partyId: string): void {
+  const token = getSessionToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  void fetch(apiUrl(`/api/parties/${partyId.toUpperCase()}/leave`), {
+    method: 'POST',
+    headers,
+    body: '{}',
+    keepalive: true,
+  }).catch(() => undefined);
 }
 
 export async function touchPartyState(partyId: string, _hostId?: string): Promise<void> {

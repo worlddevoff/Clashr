@@ -7,10 +7,7 @@ export function getSolanaCluster(): string {
   return import.meta.env.VITE_SOLANA_CLUSTER?.trim() || 'devnet';
 }
 
-const DEVNET_RPCS = [
-  'https://solana-devnet.api.onfinality.io/public',
-  'https://solana-devnet.drpc.org',
-] as const;
+const DEVNET_RPCS = ['https://solana-devnet.api.onfinality.io/public'] as const;
 
 function isPublicSolanaRpc(url: string): boolean {
   return /api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(url);

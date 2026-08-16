@@ -14,7 +14,10 @@ export function friendlyRpcError(err: unknown): string {
   if (/rate limit|429/i.test(msg)) {
     return 'Solana RPC is busy. Tap Retry stake once — do not spam the button.';
   }
-  if (/unauthorized|api key|authenticate your request/i.test(msg)) {
+  if (/free plan|paid plan|upgrade to paid|not available on/i.test(msg)) {
+    return 'Could not reach Solana. Tap Retry stake once.';
+  }
+  if (/unauthorized|api key|authenticate your request|missing api key/i.test(msg)) {
     return 'Could not reach Solana. Tap Retry stake.';
   }
   if (/Blockhash not found|blockhash not found|expired.*blockhash/i.test(msg)) {

@@ -64,7 +64,12 @@ export function clusterName(): string {
 
 export function rpcUrl(): string {
   const custom = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC;
-  if (custom && !/api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(custom)) {
+  if (
+    custom &&
+    !/api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(custom) &&
+    !/ankr\.com/i.test(custom) &&
+    !/drpc\.org/i.test(custom)
+  ) {
     return custom;
   }
   return (

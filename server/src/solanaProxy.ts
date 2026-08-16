@@ -8,25 +8,23 @@ export const ALLOWED_SOLANA_RPC = new Set([
   'getSignatureStatuses',
 ]);
 
-function isPublicSolanaHost(url: string): boolean {
-  return /api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(url);
+function isBlockedRpcHost(url: string): boolean {
+  return (
+    /api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(url) ||
+    /ankr\.com/i.test(url) ||
+    /drpc\.org/i.test(url)
+  );
 }
 
 function rpcEndpoints(): string[] {
   const primary = rpcUrl();
   const extras =
     clusterName() === 'devnet'
-      ? [
-          'https://solana-devnet.api.onfinality.io/public',
-          'https://solana-devnet.drpc.org',
-          'https://rpc.ankr.com/solana_devnet',
-        ]
+      ? ['https://solana-devnet.api.onfinality.io/public']
       : clusterName() === 'testnet'
         ? ['https://api.testnet.solana.com']
-        : ['https://solana-rpc.publicnode.com', 'https://solana.drpc.org'];
-  return [primary, ...extras.filter((u) => u !== primary && !isPublicSolanaHost(u))].filter(
-    (u) => !isPublicSolanaHost(u),
-  );
+        : ['https://solana-rpc.publicnode.com'];
+  return [...new Set([primary, ...extras])].filter((u) => !isBlockedRpcHost(u));
 }
 
 export function rpcEndpointList(): string[] {
@@ -41,9 +39,14 @@ function isRateLimit(status: number, message: string): boolean {
   return status === 429 || /rate limit|too many requests/i.test(message);
 }
 
+function isPlanLimit(message: string): boolean {
+  return /free plan|paid plan|upgrade to paid|not available on/i.test(message);
+}
+
 function isRetryable(status: number, message: string): boolean {
   return (
     isRateLimit(status, message) ||
+    isPlanLimit(message) ||
     /timed out|abort|network|econnreset|fetch failed|socket/i.test(message)
   );
 }
@@ -124,7 +127,7 @@ export async function proxySolanaRpc(method: string, params: unknown[]): Promise
       }
     }
     if (!sawRateLimit) break;
-    await sleep(300 * 2 ** attempt);
+    await sleep(800 * 2 ** attempt);
   }
-  throw new Error(last);
+  throw new Error('Could not reach Solana. Tap Retry stake once.');
 }

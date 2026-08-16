@@ -14,11 +14,11 @@ describe('solana RPC proxy allowlist', () => {
     await expect(proxySolanaRpc('getProgramAccounts', [])).rejects.toThrow('not allowed');
   });
 
-  it('never uses public api.*.solana.com hosts', () => {
+  it('never uses public solana.com, Ankr, or dRPC hosts', () => {
     process.env.SOLANA_RPC = 'https://api.devnet.solana.com';
     process.env.VITE_SOLANA_CLUSTER = 'devnet';
     const urls = rpcEndpointList();
     expect(urls.length).toBeGreaterThan(0);
-    expect(urls.every((u) => !/api\.devnet\.solana\.com/i.test(u))).toBe(true);
+    expect(urls.every((u) => !/api\.devnet\.solana\.com|ankr\.com|drpc\.org/i.test(u))).toBe(true);
   });
 });

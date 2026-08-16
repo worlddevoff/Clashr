@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   CopyIcon,
@@ -11,6 +11,8 @@ import {
   LogOutIcon,
   Share2Icon,
   AlertTriangleIcon,
+  WalletIcon,
+  LoaderCircleIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
@@ -64,7 +66,8 @@ export function PartyPage() {
   const [params] = useSearchParams();
   const partyId = (rawId ?? '').toUpperCase();
   const navigate = useNavigate();
-  const { user, isAuthed } = useAuth();
+  const { onAuth } = useOutletContext<{ onAuth?: () => void }>() ?? { onAuth: undefined };
+  const { user, isAuthed, connecting, connectWallet } = useAuth();
   const potsOn = useSolPots();
 
   const capParam = Number(params.get('cap'));
@@ -98,6 +101,13 @@ export function PartyPage() {
   const escrowJoinRef = useRef(false);
   const refundingRef = useRef(false);
   const selfId = user?.id ?? '';
+
+  useEffect(() => {
+    if (isAuthed || !partyId) return;
+    void fetchParty(partyId).then((remote) => {
+      if (remote) setParty(remote);
+    });
+  }, [isAuthed, partyId]);
 
   useEffect(() => {
     partyRef.current = party;
@@ -261,22 +271,31 @@ export function PartyPage() {
   useEffect(() => {
     if (!isAuthed || !user || !partyId) return;
     let cancelled = false;
+    const userId = user.id;
 
-    const self: PartyMember = {
+    const selfFromUser = (): PartyMember => ({
       id: user.id,
       username: user.username,
       avatar: user.avatar,
       color: user.color,
       isHost: false,
       joinedAt: Date.now(),
-    };
+    });
 
     const bootstrap = async () => {
+      const self = selfFromUser();
       const remote = await fetchParty(partyId);
       if (cancelled) return;
 
-      const hostId = remote?.hostId || hostFromUrl || user.id;
-      self.isHost = user.id === hostId;
+      const hostId = remote?.hostId || hostFromUrl;
+      const weAreHost = !!hostId && userId === hostId;
+      self.isHost = weAreHost;
+
+      if (!remote && !weAreHost) {
+        setError('Party not found. Open the host’s join link, or paste the code on Play and tap Join party.');
+        return;
+      }
+
       let initial: Party =
         remote ??
         {
@@ -284,7 +303,7 @@ export function PartyPage() {
           gameSlug,
           capacity,
           entry: entryFromUrl,
-          hostId,
+          hostId: hostId || userId,
           createdAt: Date.now(),
           status: 'waiting',
           visibility: visibilityFromUrl,
@@ -294,16 +313,20 @@ export function PartyPage() {
         };
       initial = mergeMember(initial, self);
 
-      if (self.isHost) {
+      if (weAreHost) {
         await publishPartyState(initial);
       } else {
-        const joinError = await joinPartyState(partyId, self);
+        const joined = await joinPartyState(partyId, self);
         if (cancelled) return;
-        if (joinError) {
-          setError(joinError.replace(/^.*: /, ''));
+        if (joined.error) {
+          setError(joined.error.replace(/^.*: /, ''));
         }
-        const latest = await fetchParty(partyId);
-        if (latest) initial = mergeMember(latest, self);
+        if (joined.party) {
+          initial = mergeMember(joined.party, self);
+        } else {
+          const latest = await fetchParty(partyId);
+          if (latest) initial = mergeMember(latest, self);
+        }
       }
       if (cancelled) return;
 
@@ -338,16 +361,21 @@ export function PartyPage() {
     void bootstrap();
     return () => {
       cancelled = true;
-      const current = partyRef.current;
-      const channel = channelRef.current;
-      if (current?.status === 'waiting' && current.hostId !== user.id) {
-        channel?.post({ type: 'leave', memberId: user.id });
-        void leavePartyState(partyId, user.id);
-      }
-      channel?.close();
+      channelRef.current?.close();
       channelRef.current = null;
     };
-  }, [partyId, isAuthed, user, capacity, hostFromUrl, visibilityFromUrl, stakeFromUrl, entryFromUrl, gameSlug, navigate]);
+  }, [partyId, isAuthed, user?.id, capacity, hostFromUrl, visibilityFromUrl, stakeFromUrl, entryFromUrl, gameSlug, navigate]);
+
+  useEffect(() => {
+    if (!isAuthed || !user || !partyId) return;
+    const userId = user.id;
+    return () => {
+      const current = partyRef.current;
+      if (current?.status === 'waiting' && current.hostId !== userId) {
+        void leavePartyState(partyId, userId);
+      }
+    };
+  }, [partyId, isAuthed, user?.id]);
 
   useEffect(() => {
     if (!partyId || party?.status === 'live') return;
@@ -369,7 +397,8 @@ export function PartyPage() {
           return;
         }
         setParty((prev) => {
-          if (!prev || prev.status === 'live') return prev;
+          if (prev?.status === 'live') return prev;
+          if (!prev) return remote;
           return {
             ...remote,
             escrowDeposits: remote.escrowDeposits?.length ? remote.escrowDeposits : prev.escrowDeposits,
@@ -569,11 +598,46 @@ export function PartyPage() {
 
   if (!isAuthed || !user) {
     return (
-      <div className="mx-auto flex min-h-[50vh] max-w-lg flex-col items-center justify-center gap-3 px-4 text-center">
-        <p className="font-display text-sm uppercase tracking-widest text-white/50">
-          Connect your wallet to join this party
+      <div className="mx-auto flex min-h-[50vh] max-w-lg flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+        <div className="font-display text-[11px] uppercase tracking-[0.22em] text-neon-magenta">
+          {gameName} party
+        </div>
+        <div className="font-display text-4xl font-bold tracking-[0.2em] text-neon-cyan text-glow-cyan">
+          {partyId || '——'}
+        </div>
+        <p className="text-sm text-white/55">
+          Connect the wallet you want to play with. This screen joins the lobby and asks you to
+          stake.
         </p>
-        <Button onClick={() => navigate('/')}>Back to Clashr</Button>
+        {party && party.members.length > 0 && (
+          <ul className="w-full space-y-2 text-left">
+            {party.members.map((m) => (
+              <li
+                key={m.id}
+                className="flex items-center gap-3 rounded-xl border border-ink-600 bg-ink-900/50 px-3 py-2.5"
+              >
+                <span className="grid h-10 w-10 place-items-center rounded-xl text-xl">{m.avatar}</span>
+                <span className="font-display text-sm font-semibold text-white">{m.username}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Button
+          size="lg"
+          disabled={connecting}
+          onClick={() => {
+            void connectWallet().then((res) => {
+              if (!res.ok || res.isNew) onAuth?.();
+            });
+          }}
+        >
+          {connecting ? (
+            <LoaderCircleIcon className="h-5 w-5 animate-spin" />
+          ) : (
+            <WalletIcon className="h-5 w-5" />
+          )}
+          {connecting ? 'Connecting…' : 'Join party'}
+        </Button>
       </div>
     );
   }
@@ -581,6 +645,54 @@ export function PartyPage() {
   if (!partyId) {
     navigate('/play');
     return null;
+  }
+
+  if (!party) {
+    return (
+      <div className="mx-auto flex min-h-[50vh] max-w-lg flex-col items-center justify-center gap-4 px-4 py-16 text-center">
+        <div className="font-display text-4xl font-bold tracking-[0.2em] text-neon-cyan text-glow-cyan">
+          {partyId}
+        </div>
+        <p className="text-sm text-white/55">
+          {error ?? 'Joining this lobby…'}
+        </p>
+        <Button
+          size="lg"
+          disabled={connecting}
+          onClick={() => {
+            if (!user) {
+              void connectWallet().then((res) => {
+                if (!res.ok || res.isNew) onAuth?.();
+              });
+              return;
+            }
+            setError(null);
+            void joinPartyState(partyId, {
+              id: user.id,
+              username: user.username,
+              avatar: user.avatar,
+              color: user.color,
+              isHost: false,
+              joinedAt: Date.now(),
+            }).then(async (joined) => {
+              if (joined.error) setError(joined.error.replace(/^.*: /, ''));
+              const next = joined.party ?? (await fetchParty(partyId));
+              if (next) setParty(mergeMember(next, {
+                id: user.id,
+                username: user.username,
+                avatar: user.avatar,
+                color: user.color,
+                isHost: user.id === next.hostId,
+                joinedAt: Date.now(),
+              }));
+            });
+          }}
+        >
+          <WalletIcon className="h-5 w-5" />
+          Join party
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -762,9 +874,14 @@ export function PartyPage() {
                   <span className="grid h-10 w-10 place-items-center rounded-xl border border-dashed border-ink-600 text-sm">
                     ?
                   </span>
-                  <span className="font-display text-xs uppercase tracking-wide">
+                  <span className="min-w-0 flex-1 font-display text-xs uppercase tracking-wide">
                     {isPublic ? 'Open · waiting in lobby' : 'Waiting for invite…'}
                   </span>
+                  {isHost && i === 0 && (
+                    <Button size="sm" variant="secondary" onClick={() => copy('link')}>
+                      Copy join link
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -772,8 +889,9 @@ export function PartyPage() {
 
           {isPublic && isHost && seatsLeft > 0 && (
             <div className="rounded-xl border border-neon-cyan/30 bg-neon-cyan/5 px-4 py-3 text-sm text-neon-cyan/90">
-              Waiting for players in the public lobby. Start with bots for free, or wait for a
-              second wallet to open a SOL pot.
+              Waiting for the other wallet. They open the invite link and tap Join party, or go to
+              Play and paste code {party?.id ?? partyId}. This host screen has no Join — you are
+              already in. Start with bots for free, or wait for a second wallet to open a SOL pot.
             </div>
           )}
           {isPublic && isHost && seatsLeft === 0 && (
@@ -817,12 +935,46 @@ export function PartyPage() {
                         : 'Start party'}
                 </Button>
               )
-            ) : (
+            ) : party.members.some((m) => m.id === selfId) ? (
               <div className="flex-1 rounded-xl border border-ink-600 bg-ink-900 px-4 py-3 text-center font-display text-xs uppercase tracking-widest text-white/45">
                 {isPublic && seatsLeft > 0
                   ? 'Waiting in lobby for more players…'
                   : 'Waiting for host to start…'}
               </div>
+            ) : (
+              <Button
+                size="lg"
+                className="flex-1"
+                disabled={connecting}
+                onClick={() => {
+                  if (!user) return;
+                  setError(null);
+                  void joinPartyState(partyId, {
+                    id: user.id,
+                    username: user.username,
+                    avatar: user.avatar,
+                    color: user.color,
+                    isHost: false,
+                    joinedAt: Date.now(),
+                  }).then(async (joined) => {
+                    if (joined.error) setError(joined.error.replace(/^.*: /, ''));
+                    const next = joined.party ?? (await fetchParty(partyId));
+                    if (next) {
+                      setParty(mergeMember(next, {
+                        id: user.id,
+                        username: user.username,
+                        avatar: user.avatar,
+                        color: user.color,
+                        isHost: user.id === next.hostId,
+                        joinedAt: Date.now(),
+                      }));
+                    }
+                  });
+                }}
+              >
+                <WalletIcon className="h-5 w-5" />
+                Join party
+              </Button>
             )}
             <Button size="lg" variant="secondary" onClick={leave}>
               <LogOutIcon className="h-5 w-5" /> Leave

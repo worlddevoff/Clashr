@@ -15,7 +15,8 @@ export function AppShell() {
     location.pathname === '/leaderboard' ||
     location.pathname === '/terms' ||
     location.pathname === '/privacy' ||
-    location.pathname === '/responsible-play';
+    location.pathname === '/responsible-play' ||
+    location.pathname.startsWith('/party/');
 
   return (
     <div className="flex min-h-full w-full flex-col bg-ink-950 text-white">
@@ -23,7 +24,7 @@ export function AppShell() {
       <main className="flex-1 pb-24 lg:pb-0">
         {isAuthed || isPublicBrowse ? (
           <LegalGate>
-            <Outlet />
+            <Outlet context={{ onAuth: () => setAuthOpen(true) }} />
           </LegalGate>
         ) : (
           <AuthGate onAuth={() => setAuthOpen(true)} />

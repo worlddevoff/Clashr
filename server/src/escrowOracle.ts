@@ -8,7 +8,7 @@ import {
 import bs58 from 'bs58';
 
 const SEED = Buffer.from('arcade-match');
-const DEFAULT_PROGRAM = '96kU3yLXf5agsoBGzTCQvtYxqAfm4vQV1XdZYKh95512';
+const DEFAULT_PROGRAM = '6N6QkDcBeH5nmMakCDYegU9kCJqRei5gLKVK4PDAY2yL';
 /** 5% fee / bot-win destination. Public receive address only — never the house signer. */
 const DEFAULT_TREASURY = '259nG2nNP8GjCKRYqrcpsEJ14qfrra5yabjpU6axs7We';
 

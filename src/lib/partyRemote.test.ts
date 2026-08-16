@@ -23,6 +23,23 @@ describe('public party mapping', () => {
     expect(list[0]?.memberCount).toBe(2);
   });
 
+  it('maps camelCase parties from the match server', () => {
+    const party = mapRemoteParty({
+      id: '42vkm6',
+      gameSlug: 'bomb-party',
+      capacity: 2,
+      entry: 0,
+      hostId: 'host',
+      status: 'waiting',
+      visibility: 'private',
+      members: [{ id: 'host', username: 'Host', avatar: '🐸', color: '#0f0', isHost: true, joinedAt: 1 }],
+    });
+    expect(party?.id).toBe('42VKM6');
+    expect(party?.capacity).toBe(2);
+    expect(party?.members).toHaveLength(1);
+    expect(party?.hostId).toBe('host');
+  });
+
   it('drops closed parties and keeps live ones', () => {
     expect(mapRemoteParty({ id: 'X', host_id: 'h', status: 'closed', members: [] })).toBeNull();
     const live = mapRemoteParty({

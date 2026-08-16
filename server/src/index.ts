@@ -306,12 +306,12 @@ app.post('/api/parties', async (req, res) => {
 });
 
 app.get('/api/parties/:id', async (req, res) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  if (tooMany(`pget:${user.id}`, 60, 60_000)) return res.status(429).json({ error: 'slow down' });
+  const ip = req.ip || 'x';
+  if (tooMany(`pget:${ip}`, 80, 60_000)) return res.status(429).json({ error: 'slow down' });
   const party = await getParty(req.params.id);
   if (!party) return res.status(404).json({ error: 'party not found' });
-  const isMember = party.members.some((m) => m.id === user.id);
+  const user = await userFromToken(bearer(req.headers.authorization));
+  const isMember = !!user && party.members.some((m) => m.id === user.id);
   if (party.status !== 'waiting' && !isMember) {
     return res.status(404).json({ error: 'party not found' });
   }

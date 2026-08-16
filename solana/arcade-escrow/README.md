@@ -20,12 +20,12 @@ solana program deploy target/deploy/arcade_escrow.so \
   --program-id keys/arcade_escrow-keypair.json
 ```
 
-Program id (this keypair): `96kU3yLXf5agsoBGzTCQvtYxqAfm4vQV1XdZYKh95512`
+Program id (this keypair): `6N6QkDcBeH5nmMakCDYegU9kCJqRei5gLKVK4PDAY2yL`
 
 Set in the app `.env`:
 
 ```
-VITE_ESCROW_PROGRAM_ID=96kU3yLXf5agsoBGzTCQvtYxqAfm4vQV1XdZYKh95512
+VITE_ESCROW_PROGRAM_ID=6N6QkDcBeH5nmMakCDYegU9kCJqRei5gLKVK4PDAY2yL
 ```
 
 Account layout magic is `ARCESC02`. Redeploy this program before creating new pots.

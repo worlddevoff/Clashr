@@ -88,7 +88,7 @@ export function mapPublicListings(raw: unknown): PublicPartyListing[] {
 }
 
 function mapMember(row: RemoteMember, hostId: string): PartyMember | null {
-  const id = asString(row.id);
+  const id = asString(row.id ?? (row as { userId?: unknown }).userId);
   if (!id) return null;
   return {
     id,
@@ -104,7 +104,7 @@ export function mapRemoteParty(raw: unknown): Party | null {
   if (!raw || typeof raw !== 'object') return null;
   const row = raw as RemotePartyRow & Party;
   if (typeof row.gameSlug === 'string' && Array.isArray(row.members) && row.hostId) {
-    return row as Party;
+    return { ...row, id: asString(row.id).toUpperCase() } as Party;
   }
   const id = asString(row.id).toUpperCase();
   const hostId = asString(row.host_id);
@@ -145,8 +145,8 @@ export async function fetchPublicParties(): Promise<PublicPartyListing[] | null>
 
 export async function fetchParty(partyId: string): Promise<Party | null> {
   try {
-    const data = await apiJson<{ party: Party }>(`/api/parties/${partyId.toUpperCase()}`);
-    return data.party;
+    const data = await apiJson<{ party: unknown }>(`/api/parties/${partyId.toUpperCase()}`);
+    return mapRemoteParty(data.party);
   } catch {
     return null;
   }
@@ -170,9 +170,12 @@ export async function publishPartyState(party: Party): Promise<void> {
   }
 }
 
-export async function joinPartyState(partyId: string, member: PartyMember): Promise<string | null> {
+export async function joinPartyState(
+  partyId: string,
+  member: PartyMember,
+): Promise<{ party: Party | null; error: string | null }> {
   try {
-    await apiJson(`/api/parties/${partyId.toUpperCase()}/join`, {
+    const data = await apiJson<{ party: unknown }>(`/api/parties/${partyId.toUpperCase()}/join`, {
       method: 'POST',
       body: JSON.stringify({
         username: member.username,
@@ -180,9 +183,9 @@ export async function joinPartyState(partyId: string, member: PartyMember): Prom
         color: member.color,
       }),
     });
-    return null;
+    return { party: mapRemoteParty(data.party), error: null };
   } catch (err) {
-    return err instanceof Error ? err.message : 'Could not join party';
+    return { party: null, error: err instanceof Error ? err.message : 'Could not join party' };
   }
 }
 

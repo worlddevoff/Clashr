@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { WalletIcon, LoaderCircleIcon } from 'lucide-react';
 import { Button } from './ui/Button';
@@ -10,6 +10,7 @@ import { SITE_TAGLINE, SITE_TITLE } from '../lib/brand';
 export function AuthGate({ onAuth }: { onAuth: () => void }) {
   const { connectWallet, connecting } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const onConnect = async () => {
     const res = await connectWallet();
@@ -21,7 +22,9 @@ export function AuthGate({ onAuth }: { onAuth: () => void }) {
       onAuth();
       return;
     }
-    navigate('/play');
+    if (!location.pathname.startsWith('/party/') && !location.pathname.startsWith('/game/')) {
+      navigate('/play');
+    }
   };
 
   return (

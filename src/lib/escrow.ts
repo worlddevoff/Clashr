@@ -12,7 +12,7 @@ import { getSolPotsConfig, refreshSolPots } from './solPots';
 import { friendlyRpcError, rpc, sendSignedTransaction } from './solanaRpc';
 
 /** Default program id from `solana/arcade-escrow/keys`. */
-export const DEFAULT_ESCROW_PROGRAM_ID = '96kU3yLXf5agsoBGzTCQvtYxqAfm4vQV1XdZYKh95512';
+export const DEFAULT_ESCROW_PROGRAM_ID = '6N6QkDcBeH5nmMakCDYegU9kCJqRei5gLKVK4PDAY2yL';
 
 /** Default party stake. */
 export const ENTRY_LAMPORTS = 10_000_000;

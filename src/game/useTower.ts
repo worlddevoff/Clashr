@@ -103,7 +103,7 @@ export function useNetworkTower(opts: {
           return;
         }
         if (partyId) {
-          conn.send({ type: 'party_join', code: partyId, asHost: isHost, game: 'tower' });
+          conn.send({ type: 'party_join', code: partyId });
           setStatus('Joining party…');
         } else {
           conn.send({ type: 'queue' });

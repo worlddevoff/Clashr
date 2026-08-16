@@ -9,10 +9,11 @@ export function connectTowerSocket(onMsg: (msg: ServerMsg) => void): {
   let ws: WebSocket | null = null;
   let closed = false;
   let attempt = 0;
+  let authenticated = false;
   const pending: ClientMsg[] = [];
 
   const flush = (socket: WebSocket) => {
-    while (pending.length && socket.readyState === WebSocket.OPEN) {
+    while (authenticated && pending.length && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(pending.shift()));
     }
   };
@@ -20,18 +21,24 @@ export function connectTowerSocket(onMsg: (msg: ServerMsg) => void): {
   const connect = () => {
     if (closed) return;
     const token = getSessionToken();
-    const socket = new WebSocket(wsUrl(token || ''));
+    const socket = new WebSocket(wsUrl());
     ws = socket;
+    authenticated = false;
     socket.onmessage = (ev) => {
       try {
-        onMsg(JSON.parse(String(ev.data)) as ServerMsg);
+        const msg = JSON.parse(String(ev.data)) as ServerMsg;
+        if (msg.type === 'hello') {
+          authenticated = true;
+          attempt = 0;
+          flush(socket);
+        }
+        onMsg(msg);
       } catch {
         /* ignore */
       }
     };
     socket.onopen = () => {
-      attempt = 0;
-      flush(socket);
+      socket.send(JSON.stringify({ type: 'auth', token: token || '' } satisfies ClientMsg));
     };
     socket.onclose = () => {
       if (closed) return;
@@ -44,7 +51,7 @@ export function connectTowerSocket(onMsg: (msg: ServerMsg) => void): {
   connect();
 
   const send = (msg: ClientMsg) => {
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    if (ws && authenticated && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     else pending.push(msg);
   };
 

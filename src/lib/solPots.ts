@@ -56,7 +56,7 @@ export async function refreshSolPots(): Promise<SolPotsConfig> {
   } catch {
     cached = {
       ...cached,
-      solPots: cached.solPots || !!cached.programId,
+      solPots: false,
       reason: 'config_unreachable',
     };
   }

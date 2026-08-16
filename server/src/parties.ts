@@ -1,6 +1,7 @@
 import { prisma } from './db.ts';
 import { isGameSlug } from '../../shared/games.ts';
 import type { Party } from '../../src/types/party.ts';
+import { fetchEscrowState } from './escrowOracle.ts';
 
 function code(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -77,7 +78,6 @@ export async function createParty(opts: {
   entryLamports?: number | null;
   id?: string;
   escrowPda?: string | null;
-  escrowDeposits?: string[];
 }): Promise<Party> {
   const id = (opts.id || code()).toUpperCase();
   const existing = await prisma.party.findUnique({ where: { id } });
@@ -119,7 +119,6 @@ export async function createParty(opts: {
       gamePath: null,
       updatedAt: new Date(),
       ...(opts.escrowPda ? { escrowPda: opts.escrowPda } : {}),
-      ...(opts.escrowDeposits ? { escrowDeposits: opts.escrowDeposits } : {}),
     },
     include: { members: { orderBy: { joinedAt: 'asc' } } },
   });
@@ -229,6 +228,13 @@ export async function recordDeposit(partyId: string, userId: string): Promise<Pa
   if (!room) throw new Error('party not found');
   if (room.status !== 'waiting') throw new Error('party already started');
   if (!room.members.some((m) => m.userId === userId)) throw new Error('not in party');
+  if (room.entryLamports != null && room.entryLamports > 0n) {
+    const escrow = await fetchEscrowState(id);
+    if (!escrow || escrow.pda !== room.escrowPda) throw new Error('escrow account not verified');
+    if (escrow.entryLamports !== Number(room.entryLamports)) throw new Error('escrow stake mismatch');
+    if (escrow.status > 1) throw new Error('escrow is closed');
+    if (!escrow.players.includes(userId)) throw new Error('deposit not confirmed on-chain');
+  }
   const deposits = Array.isArray(room.escrowDeposits)
     ? (room.escrowDeposits as unknown[]).filter((v): v is string => typeof v === 'string')
     : [];
@@ -244,6 +250,9 @@ export async function recordDeposit(partyId: string, userId: string): Promise<Pa
 
 export async function startParty(partyId: string, hostId: string, gamePath: string): Promise<Party> {
   const id = partyId.toUpperCase();
+  const room = await getParty(id);
+  if (!room || room.hostId !== hostId || room.status !== 'waiting') throw new Error('cannot start party');
+  await assertEscrowReady(room);
   const updated = await prisma.party.updateMany({
     where: { id, hostId, status: 'waiting' },
     data: { status: 'live', gamePath, updatedAt: new Date() },
@@ -252,6 +261,22 @@ export async function startParty(partyId: string, hostId: string, gamePath: stri
   const next = await loadParty(id);
   if (!next) throw new Error('party not found');
   return toParty(next);
+}
+
+export async function assertEscrowReady(party: Party): Promise<void> {
+  if (!party.entryLamports || party.entryLamports <= 0) return;
+  const escrow = await fetchEscrowState(party.id);
+  if (!escrow || escrow.pda !== party.escrowPda) throw new Error('escrow account not verified');
+  if (escrow.entryLamports !== party.entryLamports) throw new Error('escrow stake mismatch');
+  if (escrow.status !== 1) throw new Error('escrow must be locked before the match starts');
+  const memberIds = party.members.map((member) => member.id);
+  if (memberIds.length !== party.capacity) throw new Error('paid matches require a full party');
+  if (
+    escrow.players.length !== memberIds.length ||
+    memberIds.some((id) => !escrow.players.includes(id))
+  ) {
+    throw new Error('all player deposits must be confirmed on-chain');
+  }
 }
 
 export async function getParty(partyId: string): Promise<Party | null> {

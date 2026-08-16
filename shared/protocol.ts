@@ -28,7 +28,7 @@ export type ClientMsg =
   | { type: 'queue' }
   | { type: 'leave_queue' }
   | { type: 'party_create' }
-  | { type: 'party_join'; code: string; asHost?: boolean; game?: GameKind }
+  | { type: 'party_join'; code: string }
   | { type: 'party_leave' }
   | { type: 'party_start'; code?: string; game?: GameKind }
   | { type: 'input'; matchId: string; input: TowerInput }

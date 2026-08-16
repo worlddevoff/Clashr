@@ -28,7 +28,7 @@ Local Vite proxies `/api` and `/ws` to `http://127.0.0.1:3001`.
 
 ## Production (Railway)
 
-One service runs the website, `/api`, and `/ws`. Do not put the match server on Vercel.
+One service runs the website, `/api`, and `/ws`. Do not deploy this repository as a static Vercel site; multiplayer requires the stateful Railway WebSocket server.
 
 1. [railway.app](https://railway.app) → New Project → Deploy from GitHub → `worlddevoff/Clashr`.
 2. Variables (mark `VITE_*` available at **build** time):
@@ -40,7 +40,7 @@ One service runs the website, `/api`, and `/ws`. Do not put the match server on 
    - `VITE_SUPABASE_ANON_KEY` — publishable / anon key (not `service_role`)
 
 3. Settings → Networking → Generate domain. Leave `VITE_API_ORIGIN` empty (same host).
-4. Redeploy after adding variables so the frontend rebuilds.
+4. Redeploy after adding variables so the frontend rebuilds. The container applies the Prisma schema before accepting traffic and exits if required public Supabase build variables are missing.
 
 `PORT` is set by Railway. Same-origin play does not need `CORS_ORIGINS`.
 
@@ -58,14 +58,14 @@ Postgres holds users, sessions, demo-credit ledgers, matches, parties, and the l
 1. Open **Project Settings → Database → Connection string**.
 2. Copy the **URI** for the session pooler (port `6543`) into `DATABASE_URL` and the session/direct URI (port `5432`) into `DIRECT_URL`.
 3. Open **Project Settings → API** and set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
-4. From the repo root:
+4. For local development, synchronize the Prisma schema:
 
 ```bash
 npx prisma generate --schema server/prisma/schema.prisma
 npx prisma db push --schema server/prisma/schema.prisma
 ```
 
-A fresh project can apply `supabase/migrations/20260815131600_init_clashr_core.sql`.
+Production containers run the same `prisma db push` step at startup. Apply the files in `supabase/migrations/` separately for PostgREST grants and RLS lockdown; those policies are not managed by Prisma.
 
 ## Auth
 

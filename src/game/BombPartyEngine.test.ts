@@ -27,6 +27,7 @@ function makeEngine(players = 4, startTimer = 12) {
     startTimer,
     passTimeBonus: 0,
     humanId: 'human',
+    holderId: 'human',
     countdownMs: 0,
   });
 }
@@ -70,20 +71,33 @@ describe('Bomb Party storm', () => {
 });
 
 describe('Bomb Party fuse', () => {
-  it('gives every holder a 12-second fuse', () => {
+  it('starts each elimination round with a 12-second fuse', () => {
     const engine = makeEngine();
     expect(engine.snapshot().bomb?.timeLeft).toBe(12);
   });
 
-  it('keeps the 12-second fuse in a closed arena', () => {
-    const engine = makeEngine(4);
-    engine.debugSetElapsed(ZONE_GRACE_MS + ZONE_CLOSE_MS);
-    expect(engine.getHoldSeconds()).toBe(12);
+  it('resets the fuse on a pass before the storm', () => {
+    const engine = makeEngine(3);
+    engine.debugSetElapsed(1000);
+    engine.debugSetPos('human', CENTER.x, CENTER.y);
+    engine.debugSetPos('bot-1', CENTER.x, CENTER.y);
+
+    engine.step(16);
+
+    expect(engine.snapshot().bomb?.holderId).toBe('bot-1');
+    expect(engine.snapshot().bomb?.timeLeft).toBe(12);
   });
 
-  it('keeps the 12-second fuse with two players', () => {
-    const engine = makeEngine(2);
-    expect(engine.getHoldSeconds()).toBe(12);
+  it('does not reset the fuse on passes once the storm reaches the final three', () => {
+    const engine = makeEngine(3);
+    engine.debugSetElapsed(ZONE_GRACE_MS + 1);
+    engine.debugSetPos('human', CENTER.x, CENTER.y);
+    engine.debugSetPos('bot-1', CENTER.x, CENTER.y);
+
+    engine.step(16);
+
+    expect(engine.snapshot().bomb?.holderId).toBe('bot-1');
+    expect(engine.snapshot().bomb?.timeLeft).toBeCloseTo(11.984, 3);
   });
 });
 

@@ -9,13 +9,7 @@ export function getSolanaCluster(): string {
 
 const DEVNET_RPCS = ['https://solana-devnet.api.onfinality.io/public'] as const;
 
-function isPublicSolanaRpc(url: string): boolean {
-  return /api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(url);
-}
-
 export function getSolanaRpcUrl(): string {
-  const custom = import.meta.env.VITE_SOLANA_RPC?.trim();
-  if (custom && !isPublicSolanaRpc(custom)) return custom;
   const cluster = getSolanaCluster();
   if (cluster === 'devnet') return DEVNET_RPCS[0];
   if (cluster === 'testnet') return 'https://api.testnet.solana.com';

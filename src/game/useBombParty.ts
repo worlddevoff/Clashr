@@ -206,7 +206,7 @@ export function useNetworkBombParty(opts: {
           setStatus('live');
           return;
         }
-        conn.send({ type: 'party_join', code: partyId, asHost: isHost, game: 'bomb-party' });
+        conn.send({ type: 'party_join', code: partyId });
         setStatus('Joining party…');
       }
       if (msg.type === 'party' && isHost && !started) {

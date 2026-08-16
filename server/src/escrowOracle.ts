@@ -8,6 +8,8 @@ import {
 import bs58 from 'bs58';
 
 const SEED = Buffer.from('arcade-match');
+const ESCROW_MAGIC = 'ARCESC02';
+const ESCROW_ACCOUNT_SIZE = 794;
 const DEFAULT_PROGRAM = '6N6QkDcBeH5nmMakCDYegU9kCJqRei5gLKVK4PDAY2yL';
 /** 5% fee / bot-win destination. Public receive address only — never the house signer. */
 const DEFAULT_TREASURY = '259nG2nNP8GjCKRYqrcpsEJ14qfrra5yabjpU6axs7We';
@@ -63,7 +65,7 @@ export function clusterName(): string {
 }
 
 export function rpcUrl(): string {
-  const custom = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC;
+  const custom = process.env.SOLANA_RPC;
   if (
     custom &&
     !/api\.(devnet|testnet|mainnet-beta)\.solana\.com/i.test(custom) &&
@@ -117,6 +119,37 @@ export async function refreshPotsReady(): Promise<boolean> {
 function partyPda(partyId: string, program: PublicKey): PublicKey {
   const [pda] = PublicKey.findProgramAddressSync([SEED, partyIdSeed(partyId)], program);
   return pda;
+}
+
+export interface EscrowState {
+  pda: string;
+  entryLamports: number;
+  status: number;
+  players: string[];
+}
+
+export async function fetchEscrowState(partyId: string): Promise<EscrowState | null> {
+  const program = programId();
+  const pda = partyPda(partyId, program);
+  const info = await new Connection(rpcUrl(), 'confirmed').getAccountInfo(pda, 'confirmed');
+  if (!info || !info.owner.equals(program) || info.data.length < ESCROW_ACCOUNT_SIZE) return null;
+  const data = Buffer.from(info.data);
+  if (data.subarray(0, 8).toString() !== ESCROW_MAGIC) return null;
+
+  const playerCount = data[147] ?? 0;
+  const capacity = data[146] ?? 0;
+  if (playerCount > capacity || 154 + playerCount * 32 > data.length) return null;
+  const players: string[] = [];
+  for (let i = 0; i < playerCount; i++) {
+    const start = 154 + i * 32;
+    players.push(new PublicKey(data.subarray(start, start + 32)).toBase58());
+  }
+  return {
+    pda: pda.toBase58(),
+    entryLamports: Number(data.readBigUInt64LE(136)),
+    status: data[148] ?? 0,
+    players,
+  };
 }
 
 /** Pays the locked pot from the house/oracle key after an authoritative match_end. */

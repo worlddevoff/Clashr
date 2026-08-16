@@ -8,7 +8,7 @@ import type { TowerInput } from '../../shared/tower/types.ts';
 import { BombPartyEngine, type BombPartySeedPlayer } from '../../src/game/BombPartyEngine.ts';
 import { getBombMap } from '../../src/game/bombMaps.ts';
 import { settleMatch, getBalance, chargeMatchEntries, settleBombMatch } from './ledger.ts';
-import { getParty } from './parties.ts';
+import { assertEscrowReady, getParty } from './parties.ts';
 import { houseCanSettle, settleEscrowAsHouse } from './escrowOracle.ts';
 import { TOWER_BOT_AVATARS, TOWER_BOT_COLORS, TOWER_BOT_NAMES } from '../../shared/tower/bots.ts';
 
@@ -345,13 +345,18 @@ export async function handleMessage(sock: Sock, raw: string): Promise<void> {
 
   if (msg.type === 'party_join') {
     const code = msg.code.toUpperCase();
+    const db = await getParty(code).catch(() => null);
+    if (!db || !db.members.some((member) => member.id === sock.userId)) {
+      send(sock, { type: 'error', message: 'Party membership required' });
+      return;
+    }
     let p = parties.get(code);
     if (!p) {
-      p = { host: msg.asHost ? sock.userId : '', members: [], game: msg.game };
+      p = { host: db.hostId, members: [], game: db.gameSlug };
       parties.set(code, p);
     }
-    if (msg.asHost) p.host = sock.userId;
-    if (msg.game) p.game = msg.game;
+    p.host = db.hostId;
+    p.game = db.gameSlug;
     if (!p.members.includes(sock)) p.members.push(sock);
     for (const m of p.members) {
       send(m, { type: 'party', code, members: partyMembers(code) });
@@ -378,12 +383,26 @@ export async function handleMessage(sock: Sock, raw: string): Promise<void> {
       ? ([code, parties.get(code)] as const)
       : [...parties.entries()].find(([, p]) => p.host === sock.userId);
     if (!found || !found[1]) return;
-    if (found[1].host && found[1].host !== sock.userId) return;
-    const members = found[1].members.filter((m) => m.readyState === m.OPEN && m.userId);
     const db = await getParty(found[0]).catch(() => null);
-    const game = db?.gameSlug === 'bomb-party' || found[1].game === 'bomb-party' || msg.game === 'bomb-party'
-      ? 'bomb-party'
-      : 'tower';
+    if (!db || db.hostId !== sock.userId) {
+      send(sock, { type: 'error', message: 'Only the party host can start the match' });
+      return;
+    }
+    try {
+      await assertEscrowReady(db);
+    } catch (err) {
+      send(sock, { type: 'error', message: err instanceof Error ? err.message : 'Escrow not ready' });
+      return;
+    }
+    const allowedMembers = new Set(db.members.map((member) => member.id));
+    const members = found[1].members.filter(
+      (member) => member.readyState === member.OPEN && member.userId && allowedMembers.has(member.userId),
+    );
+    if (db.entryLamports && members.length !== db.members.length) {
+      send(sock, { type: 'error', message: 'Waiting for every paid player to connect' });
+      return;
+    }
+    const game = db.gameSlug === 'bomb-party' ? 'bomb-party' : 'tower';
     if (game === 'bomb-party') {
       await startBombMatch(members, {
         partyId: found[0],

@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import {
   getSolPotsConfig,
   refreshSolPots,
-  solPotsEnabled,
   subscribeSolPots,
   type SolPotsConfig,
 } from '../lib/solPots';
@@ -26,8 +25,7 @@ export function SolPotsProvider({ children }: { children: ReactNode }) {
 }
 
 export function useSolPots(): boolean {
-  const cfg = useContext(SolPotsContext);
-  return cfg.solPots || solPotsEnabled();
+  return useContext(SolPotsContext).solPots;
 }
 
 export function useSolPotsConfig(): SolPotsConfig {

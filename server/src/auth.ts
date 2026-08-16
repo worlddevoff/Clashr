@@ -94,3 +94,8 @@ export async function userFromToken(token: string | undefined) {
   if (!s || s.expiresAt.getTime() < Date.now()) return null;
   return s.user;
 }
+
+export async function revokeToken(token: string | undefined): Promise<void> {
+  if (!token) return;
+  await prisma.session.deleteMany({ where: { token } });
+}

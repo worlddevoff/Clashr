@@ -6,7 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { prisma } from './db.ts';
-import { challengeMessage, issueNonce, loginWithSignature, userFromToken } from './auth.ts';
+import { challengeMessage, issueNonce, loginWithSignature, revokeToken, userFromToken } from './auth.ts';
 import { ensureHouse, getBalance } from './ledger.ts';
 import { attachUser, detachSocket, handleMessage } from './matchmaking.ts';
 import { toClientUser, updateProfile } from './profile.ts';
@@ -63,7 +63,24 @@ app.use((_req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  if (IS_PROD) res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  if (IS_PROD) {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+    res.setHeader(
+      'Content-Security-Policy',
+      [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data: blob:",
+        "connect-src 'self' https: wss:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+      ].join('; '),
+    );
+  }
   next();
 });
 
@@ -171,6 +188,15 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (e) {
     fail(res, 400, e);
+  }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  try {
+    await revokeToken(bearer(req.headers.authorization));
+    res.json({ ok: true });
+  } catch (e) {
+    fail(res, 500, e);
   }
 });
 
@@ -311,9 +337,6 @@ app.post('/api/parties', async (req, res) => {
       entryLamports: req.body.entryLamports != null ? Number(req.body.entryLamports) : null,
       id: typeof req.body.id === 'string' ? req.body.id : undefined,
       escrowPda: typeof req.body.escrowPda === 'string' ? req.body.escrowPda : undefined,
-      escrowDeposits: Array.isArray(req.body.escrowDeposits)
-        ? req.body.escrowDeposits.filter((v: unknown) => typeof v === 'string')
-        : undefined,
     });
     res.json({ party });
   } catch (e) {
@@ -415,21 +438,49 @@ const wss = new WebSocketServer({
   server,
   path: '/ws',
   verifyClient: (info) => originAllowed(info.origin, info.req.headers.host),
+  maxPayload: 32 * 1024,
+  perMessageDeflate: false,
 });
 
-wss.on('connection', async (ws: WebSocket, req) => {
-  const url = new URL(req.url || '/', 'http://localhost');
-  const token = url.searchParams.get('token') || '';
-  const user = await userFromToken(token);
-  if (!user) {
-    ws.close(4001, 'unauthorized');
-    return;
-  }
-  attachUser(ws, user);
+wss.on('connection', (ws: WebSocket) => {
+  let authenticating = false;
+  const authTimeout = setTimeout(() => ws.close(4001, 'authentication timeout'), 5_000);
+
   ws.on('message', (data) => {
-    void handleMessage(ws, String(data));
+    if ('userId' in ws && ws.userId) {
+      void handleMessage(ws, String(data));
+      return;
+    }
+    if (authenticating) return;
+
+    let auth: { type?: unknown; token?: unknown };
+    try {
+      auth = JSON.parse(String(data)) as { type?: unknown; token?: unknown };
+    } catch {
+      ws.close(4001, 'unauthorized');
+      return;
+    }
+    if (auth.type !== 'auth' || typeof auth.token !== 'string' || auth.token.length > 128) {
+      ws.close(4001, 'unauthorized');
+      return;
+    }
+
+    authenticating = true;
+    void userFromToken(auth.token)
+      .then((user) => {
+        if (!user || ws.readyState !== ws.OPEN) {
+          ws.close(4001, 'unauthorized');
+          return;
+        }
+        clearTimeout(authTimeout);
+        attachUser(ws, user);
+      })
+      .catch(() => ws.close(1011, 'authentication unavailable'));
   });
-  ws.on('close', () => detachSocket(ws));
+  ws.on('close', () => {
+    clearTimeout(authTimeout);
+    detachSocket(ws);
+  });
 });
 
 void (async () => {

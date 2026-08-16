@@ -31,8 +31,9 @@ const REACTIONS = ['😱', '🥵', '😭', '🤪', '💀', '🙈', '😤'];
 /** Emojis the human can taunt with (number keys 1-6 + the on-screen bar). */
 export const TAUNTS = ['😂', '😎', '👋', '🤡', '🔥', '💀'];
 
-/** Every holder gets the same readable fuse, including two-player endgames. */
+/** Each elimination round starts with the same readable fuse. */
 const HOLD_SECONDS = 12;
+const SUDDEN_DEATH_PLAYERS = 3;
 
 export const ZONE_GRACE_MS = 6000;
 export const ZONE_CLOSE_MS = 42000;
@@ -320,6 +321,7 @@ export class BombPartyEngine extends GameEngine {
       const hold = this.holdSeconds();
       this.bomb.timeLeft -= dt;
       this.bomb.intensity = Math.max(0, Math.min(1, 1 - this.bomb.timeLeft / hold));
+      const suddenDeath = alive.length <= SUDDEN_DEATH_PLAYERS && this.computeZone().storm;
 
       if (this.elapsed - this.lastPassAt > PASS_COOLDOWN_MS) {
         for (const p of alive) {
@@ -329,8 +331,12 @@ export class BombPartyEngine extends GameEngine {
             p.hasBomb = true;
             this.bomb.holderId = p.id;
             this.bomb.passCount += 1;
-            this.bomb.timeLeft = hold;
-            this.bomb.intensity = 0;
+            // Once the closing walls and final three create a tight endgame,
+            // keep one shared fuse running so repeated passes cannot stall it.
+            if (!suddenDeath) {
+              this.bomb.timeLeft = hold;
+              this.bomb.intensity = 0;
+            }
             this.lastPassAt = this.elapsed;
             this.shake = 8;
             this.react(p);

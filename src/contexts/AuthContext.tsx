@@ -217,6 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logOut = useCallback(() => {
+    void apiJson('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     void disconnectSolana();
     setSessionToken(null);
     persistSession(null);

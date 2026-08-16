@@ -22,16 +22,15 @@ export function apiUrl(path: string): string {
   return `${apiOrigin()}${withApi}`;
 }
 
-export function wsUrl(token: string): string {
+export function wsUrl(): string {
   const origin = apiOrigin();
   if (origin) {
     const u = new URL('/ws', origin);
     u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-    u.searchParams.set('token', token);
     return u.toString();
   }
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/ws?token=${encodeURIComponent(token)}`;
+  return `${proto}://${window.location.host}/ws`;
 }
 
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
